@@ -198,29 +198,72 @@ async function fetchVenvEnvironments(): Promise<IVenvEnvironmentsResponse | null
 /**
  * Find a venv environment matching the given display name.
  *
- * @param displayName - The kernel display name to match
+ * When `executablePath` is provided, performs deterministic path-based
+ * matching: the environment whose `path` is a prefix of the kernel's
+ * Python executable wins. This avoids the substring-collision class of
+ * bug where two envs share a name prefix (e.g. `demo` vs `demo-prod`).
+ *
+ * Falls back to substring matching on env names only when no executable
+ * path is available (e.g. KernelPathHandler returned null).
+ *
+ * @param displayName - The kernel display name (used for fallback match)
+ * @param executablePath - The kernel's `argv[0]` python path, if known
  * @returns The matching environment or null
  */
 async function findVenvEnvironment(
-  displayName: string
+  displayName: string,
+  executablePath?: string | null
 ): Promise<IVenvEnvironment | null> {
   const envData = await fetchVenvEnvironments();
   if (!envData) {
     return null;
   }
 
-  // Find matching environment by name
-  // Display name patterns: "Python (envname)", "envname", "Python 3 (envname)"
-  for (const env of envData.environments) {
-    // Skip conda environments - they can't be unregistered via nb_venv_kernels
-    if (env.type === 'conda') {
-      continue;
+  // Path-based match (preferred) - exact prefix on env.path eliminates
+  // ambiguity between envs with overlapping names. If we have an absolute
+  // executable path, we trust it: a non-match here is definitive (kernel
+  // not registered with nb_venv_kernels), so we do NOT fall back to
+  // substring matching - that would re-introduce the very collision bug
+  // this function is designed to prevent.
+  if (executablePath && executablePath.startsWith('/')) {
+    for (const env of envData.environments) {
+      if (env.type === 'conda') {
+        continue;
+      }
+      if (!env.path) {
+        continue;
+      }
+      const prefix = env.path.endsWith('/') ? env.path : env.path + '/';
+      if (executablePath.startsWith(prefix)) {
+        return env;
+      }
     }
+    return null;
+  }
 
+  // Fallback: substring match on env names, used when executablePath is
+  // missing or relative (e.g. nb_venv_kernels did not rewrite argv[0] for
+  // the current env). Sort by name length descending so longer names try
+  // first - mitigates substring collisions when path matching is
+  // unavailable.
+  const candidates = envData.environments
+    .filter(env => env.type !== 'conda')
+    .slice()
+    .sort((a, b) => {
+      const aLen = Math.max(
+        (a.name || '').length,
+        (a.custom_name || '').length
+      );
+      const bLen = Math.max(
+        (b.name || '').length,
+        (b.custom_name || '').length
+      );
+      return bLen - aLen;
+    });
+
+  for (const env of candidates) {
     const envName = env.name || '';
     const customName = env.custom_name || '';
-
-    // Check if display_name contains the environment name
     if (
       (envName && displayName.includes(envName)) ||
       (customName && displayName.includes(customName))
@@ -454,18 +497,20 @@ function extractKernelNameFromCard(element: HTMLElement): string | null {
 
 /**
  * Setup event listener to capture right-clicked kernel name.
+ *
+ * Always resets `lastClickedKernelName` on every contextmenu event so a
+ * stale value from a previous right-click on a launcher card cannot leak
+ * into a subsequent command invocation triggered from a different context.
  */
 function setupContextMenuCapture(): void {
   document.addEventListener(
     'contextmenu',
     (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (target) {
-        const card = target.closest('.jp-LauncherCard');
-        if (card) {
-          lastClickedKernelName = extractKernelNameFromCard(target);
-        }
-      }
+      const target = event.target as HTMLElement | null;
+      const card = target ? target.closest('.jp-LauncherCard') : null;
+      lastClickedKernelName = card
+        ? extractKernelNameFromCard(target as HTMLElement)
+        : null;
     },
     true
   ); // Use capture phase to get event before context menu
@@ -653,8 +698,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        // Find the venv environment for this kernel
-        const env = await findVenvEnvironment(lastClickedKernelName);
+        // Resolve the kernel's executable path so we can match envs by path
+        // rather than by name substring (avoids picking the wrong env when
+        // names share a prefix, e.g. `demo` vs `demo-prod`).
+        const kernelInfo = await fetchKernelPath(lastClickedKernelName);
+        const env = await findVenvEnvironment(
+          lastClickedKernelName,
+          kernelInfo?.executable_path
+        );
 
         if (!env) {
           await showErrorMessage(
@@ -724,8 +775,14 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        // Find the venv environment for this kernel
-        const env = await findVenvEnvironment(lastClickedKernelName);
+        // Resolve the kernel's executable path so we can match envs by path
+        // rather than by name substring (avoids picking the wrong env when
+        // names share a prefix, e.g. `demo` vs `demo-prod`).
+        const kernelInfo = await fetchKernelPath(lastClickedKernelName);
+        const env = await findVenvEnvironment(
+          lastClickedKernelName,
+          kernelInfo?.executable_path
+        );
 
         if (!env) {
           await showErrorMessage(

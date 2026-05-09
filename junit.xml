@@ -1,11 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="3" failures="0" errors="0" time="2.159">
-  <testsuite name="context menu configuration" errors="0" failures="0" skipped="0" timestamp="2025-12-23T01:28:32" time="1.176" tests="3">
-    <testcase classname="context menu configuration should define all expected context menu commands" name="context menu configuration should define all expected context menu commands" time="0.001">
+<testsuites name="jest tests" tests="10" failures="0" errors="0" time="1.978">
+  <testsuite name="findVenvEnvironment matching" errors="0" failures="0" skipped="0" timestamp="2026-05-09T21:10:48" time="1.236" tests="10">
+    <testcase classname="findVenvEnvironment matching selects correct env by executable path when names overlap" name="findVenvEnvironment matching selects correct env by executable path when names overlap" time="0.001">
+    </testcase>
+    <testcase classname="findVenvEnvironment matching selects shorter-named env by executable path" name="findVenvEnvironment matching selects shorter-named env by executable path" time="0">
+    </testcase>
+    <testcase classname="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" name="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" time="0">
+    </testcase>
+    <testcase classname="findVenvEnvironment matching falls back to longest-name substring match when path missing" name="findVenvEnvironment matching falls back to longest-name substring match when path missing" time="0.001">
+    </testcase>
+    <testcase classname="findVenvEnvironment matching matches custom_name in fallback path" name="findVenvEnvironment matching matches custom_name in fallback path" time="0">
+    </testcase>
+    <testcase classname="findVenvEnvironment matching skips conda envs in path-based matching" name="findVenvEnvironment matching skips conda envs in path-based matching" time="0">
+    </testcase>
+    <testcase classname="findVenvEnvironment matching returns null when no env matches and path is unset" name="findVenvEnvironment matching returns null when no env matches and path is unset" time="0">
+    </testcase>
+    <testcase classname="context menu configuration should define all expected context menu commands" name="context menu configuration should define all expected context menu commands" time="0">
     </testcase>
     <testcase classname="context menu configuration should target .jp-LauncherCard selector for all commands" name="context menu configuration should target .jp-LauncherCard selector for all commands" time="0">
     </testcase>
-    <testcase classname="context menu configuration should have correct menu item order by rank" name="context menu configuration should have correct menu item order by rank" time="0.001">
+    <testcase classname="context menu configuration should have correct menu item order by rank" name="context menu configuration should have correct menu item order by rank" time="0">
     </testcase>
   </testsuite>
 </testsuites>
