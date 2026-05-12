@@ -799,14 +799,24 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
+        // Resolving the kernel path and the matching env requires server
+        // round-trips that can take a moment; show a spinner so the user
+        // sees the click registered before anything else appears.
+        const resolveDialog = showLoadingDialog('Resolving environment...');
+
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
-        const kernelInfo = await fetchKernelPath(displayName);
-        const env = await findVenvEnvironment(
-          displayName,
-          kernelInfo?.executable_path
-        );
+        let env: IVenvEnvironment | null;
+        try {
+          const kernelInfo = await fetchKernelPath(displayName);
+          env = await findVenvEnvironment(
+            displayName,
+            kernelInfo?.executable_path
+          );
+        } finally {
+          resolveDialog.dispose();
+        }
 
         if (!env) {
           await showErrorMessage(
@@ -878,14 +888,24 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
+        // Resolving the kernel path and the matching env requires server
+        // round-trips that can take a moment; show a spinner so the user
+        // sees the click registered before the confirmation dialog appears.
+        const resolveDialog = showLoadingDialog('Resolving environment...');
+
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
-        const kernelInfo = await fetchKernelPath(displayName);
-        const env = await findVenvEnvironment(
-          displayName,
-          kernelInfo?.executable_path
-        );
+        let env: IVenvEnvironment | null;
+        try {
+          const kernelInfo = await fetchKernelPath(displayName);
+          env = await findVenvEnvironment(
+            displayName,
+            kernelInfo?.executable_path
+          );
+        } finally {
+          resolveDialog.dispose();
+        }
 
         if (!env) {
           await showErrorMessage(
