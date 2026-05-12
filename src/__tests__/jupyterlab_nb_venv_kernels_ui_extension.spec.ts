@@ -172,25 +172,48 @@ interface IVenvEnvironment {
   path: string;
 }
 
+function absoluteEnvPath(
+  envPath: string,
+  workspaceRoot: string | undefined
+): string | null {
+  if (!envPath) {
+    return null;
+  }
+  if (envPath.startsWith('/')) {
+    return envPath.replace(/\/+$/, '');
+  }
+  if (!workspaceRoot || !workspaceRoot.startsWith('/')) {
+    return null;
+  }
+  return (
+    workspaceRoot.replace(/\/+$/, '') + '/' + envPath.replace(/^\/+|\/+$/g, '')
+  );
+}
+
 function findVenvEnvironmentMatch(
   environments: IVenvEnvironment[],
   displayName: string,
-  executablePath?: string | null
+  executablePath?: string | null,
+  workspaceRoot?: string
 ): IVenvEnvironment | null {
   if (executablePath && executablePath.startsWith('/')) {
+    let attemptedPathMatch = false;
     for (const env of environments) {
       if (env.type === 'conda') {
         continue;
       }
-      if (!env.path) {
+      const envAbs = absoluteEnvPath(env.path, workspaceRoot);
+      if (!envAbs) {
         continue;
       }
-      const prefix = env.path.endsWith('/') ? env.path : env.path + '/';
-      if (executablePath.startsWith(prefix)) {
+      attemptedPathMatch = true;
+      if (executablePath.startsWith(envAbs + '/')) {
         return env;
       }
     }
-    return null;
+    if (attemptedPathMatch) {
+      return null;
+    }
   }
 
   const candidates = environments
@@ -337,6 +360,79 @@ describe('findVenvEnvironment matching', () => {
       null
     );
     expect(match).toBeNull();
+  });
+
+  // Regression: nb_venv_kernels reports env.path relative to workspace_root,
+  // but the kernelspec argv[0] (executablePath) is absolute. Earlier the
+  // prefix check compared an absolute path against a relative one and never
+  // matched - every uv kernel showed "is not managed by nb_venv_kernels".
+  it('matches when env.path is relative to workspace_root', () => {
+    const envs: IVenvEnvironment[] = [
+      {
+        name: 'cp-kpi',
+        custom_name: 'cp-kpi',
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'delaval/cp/graph-engine/datascience/.venv'
+      }
+    ];
+    const match = findVenvEnvironmentMatch(
+      envs,
+      'Python [uv env:cp-kpi]',
+      '/home/lab/workspace/delaval/cp/graph-engine/datascience/.venv/bin/python',
+      '/home/lab/workspace'
+    );
+    expect(match?.name).toBe('cp-kpi');
+  });
+
+  it('disambiguates relative env paths sharing a prefix', () => {
+    const envs: IVenvEnvironment[] = [
+      {
+        name: 'demo',
+        custom_name: 'demo',
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'projects/demo/.venv'
+      },
+      {
+        name: 'demo-prod',
+        custom_name: 'demo-prod',
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'projects/demo-prod/.venv'
+      }
+    ];
+    const match = findVenvEnvironmentMatch(
+      envs,
+      'Python [uv env:demo-prod]',
+      '/home/lab/workspace/projects/demo-prod/.venv/bin/python',
+      '/home/lab/workspace'
+    );
+    expect(match?.name).toBe('demo-prod');
+  });
+
+  it('falls back to substring when env paths are relative and workspace_root is missing', () => {
+    const envs: IVenvEnvironment[] = [
+      {
+        name: 'cp-kpi',
+        custom_name: 'cp-kpi',
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'delaval/cp/datascience/.venv'
+      }
+    ];
+    // old nb_venv_kernels: no workspace_root -> path-match can't be attempted
+    const match = findVenvEnvironmentMatch(
+      envs,
+      'Python [uv env:cp-kpi]',
+      '/home/lab/workspace/delaval/cp/datascience/.venv/bin/python',
+      undefined
+    );
+    expect(match?.name).toBe('cp-kpi');
   });
 });
 

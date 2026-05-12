@@ -201,15 +201,46 @@ async function fetchVenvEnvironments(): Promise<IVenvEnvironmentsResponse | null
 }
 
 /**
+ * Resolve an nb_venv_kernels environment path to an absolute path.
+ *
+ * nb_venv_kernels reports `env.path` relative to its `workspace_root` (e.g.
+ * `delaval/.../datascience/.venv`); the kernelspec `argv[0]` we compare it
+ * against is absolute. Join them so the prefix check works.
+ *
+ * @param envPath - The `path` field from an nb_venv_kernels environment
+ * @param workspaceRoot - The `workspace_root` field from the environments response
+ * @returns The absolute path, or null if it cannot be resolved
+ */
+function absoluteEnvPath(
+  envPath: string,
+  workspaceRoot: string | undefined
+): string | null {
+  if (!envPath) {
+    return null;
+  }
+  if (envPath.startsWith('/')) {
+    return envPath.replace(/\/+$/, '');
+  }
+  if (!workspaceRoot || !workspaceRoot.startsWith('/')) {
+    return null;
+  }
+  return (
+    workspaceRoot.replace(/\/+$/, '') + '/' + envPath.replace(/^\/+|\/+$/g, '')
+  );
+}
+
+/**
  * Find a venv environment matching the given display name.
  *
- * When `executablePath` is provided, performs deterministic path-based
- * matching: the environment whose `path` is a prefix of the kernel's
- * Python executable wins. This avoids the substring-collision class of
- * bug where two envs share a name prefix (e.g. `demo` vs `demo-prod`).
+ * When `executablePath` is provided as an absolute path, performs
+ * deterministic path-based matching: the environment whose (resolved,
+ * absolute) `path` is a prefix of the kernel's Python executable wins. This
+ * avoids the substring-collision class of bug where two envs share a name
+ * prefix (e.g. `demo` vs `demo-prod`).
  *
- * Falls back to substring matching on env names only when no executable
- * path is available (e.g. KernelPathHandler returned null).
+ * Falls back to substring matching on env names when no executable path is
+ * available, or when none of the env paths could be resolved to absolute
+ * (old nb_venv_kernels without `workspace_root`).
  *
  * @param displayName - The kernel display name (used for fallback match)
  * @param executablePath - The kernel's `argv[0]` python path, if known
@@ -224,26 +255,31 @@ async function findVenvEnvironment(
     return null;
   }
 
-  // Path-based match (preferred) - exact prefix on env.path eliminates
-  // ambiguity between envs with overlapping names. If we have an absolute
-  // executable path, we trust it: a non-match here is definitive (kernel
-  // not registered with nb_venv_kernels), so we do NOT fall back to
-  // substring matching - that would re-introduce the very collision bug
-  // this function is designed to prevent.
+  // Path-based match (preferred) - exact prefix on the env's absolute path
+  // eliminates ambiguity between envs with overlapping names. If we have an
+  // absolute executable path AND at least one env path resolved, we trust
+  // the result: a non-match is then definitive (kernel not registered with
+  // nb_venv_kernels), so we do NOT fall back to substring matching - that
+  // would re-introduce the very collision bug this function prevents.
   if (executablePath && executablePath.startsWith('/')) {
+    let attemptedPathMatch = false;
     for (const env of envData.environments) {
       if (env.type === 'conda') {
         continue;
       }
-      if (!env.path) {
+      const envAbs = absoluteEnvPath(env.path, envData.workspace_root);
+      if (!envAbs) {
         continue;
       }
-      const prefix = env.path.endsWith('/') ? env.path : env.path + '/';
-      if (executablePath.startsWith(prefix)) {
+      attemptedPathMatch = true;
+      if (executablePath.startsWith(envAbs + '/')) {
         return env;
       }
     }
-    return null;
+    if (attemptedPathMatch) {
+      return null;
+    }
+    // No env path could be resolved to absolute - fall through to substring.
   }
 
   // Fallback: substring match on env names, used when executablePath is
