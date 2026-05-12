@@ -7,22 +7,22 @@
     "context": [
       {
         "command": "launcher:show-kernel-in-file-browser",
-        "selector": ".jp-LauncherCard",
+        "selector": ".jp-LauncherCard[data-jp-kernel-display-name]",
         "rank": 10
       },
       {
         "command": "launcher:open-terminal-at-kernel",
-        "selector": ".jp-LauncherCard",
+        "selector": ".jp-LauncherCard[data-jp-kernel-display-name]",
         "rank": 11
       },
       {
         "command": "launcher:unregister-venv-kernel",
-        "selector": ".jp-LauncherCard",
+        "selector": ".jp-LauncherCard[data-jp-kernel-display-name]",
         "rank": 12
       },
       {
         "command": "launcher:remove-venv-environment",
-        "selector": ".jp-LauncherCard",
+        "selector": ".jp-LauncherCard[data-jp-kernel-display-name]",
         "rank": 13
       }
     ]

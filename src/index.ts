@@ -107,10 +107,15 @@ function showLoadingDialog(message: string): Dialog<unknown> {
 }
 
 /**
- * Store for the last right-clicked kernel display name.
- * This is set when a context menu is opened on a launcher card.
+ * Data attribute stamped on launcher cards that represent a kernel.
+ *
+ * Presence of the attribute is the explicit "this card is a kernel" marker
+ * that the context menu selector in `schema/plugin.json` keys off - so the
+ * menu never appears on Terminal, Text File, service, or other non-kernel
+ * cards. The attribute value is the kernel display name, used for path
+ * resolution when a command runs.
  */
-let lastClickedKernelName: string | null = null;
+const KERNEL_CARD_ATTR = 'data-jp-kernel-display-name';
 
 /**
  * Flag indicating whether nb_venv_kernels extension is available.
@@ -469,51 +474,104 @@ function toRelativePath(
 }
 
 /**
- * Extract kernel display name from a launcher card element.
+ * Determine whether a launcher card represents a kernel and, if so, return
+ * its display name.
  *
- * @param element - The clicked element or its parent launcher card
- * @returns The kernel display name or null if not found
+ * JupyterLab renders kernel launcher cards (Notebook / Console items backed
+ * by a kernelspec) with an `<img class="jp-Launcher-kernelIcon">` showing
+ * the kernelspec logo; non-kernel cards (Terminal, Text File, services,
+ * etc.) render an inline `<svg>` icon instead. This is the only signal that
+ * survives category renaming / localization, so we use it - but only to
+ * decide whether to stamp the card. Everything downstream keys off the
+ * explicit {@link KERNEL_CARD_ATTR} attribute we write, never the icon.
+ *
+ * @param card - A `.jp-LauncherCard` element
+ * @returns The kernel display name, or null if the card is not a kernel
  */
-function extractKernelNameFromCard(element: HTMLElement): string | null {
-  // Find the launcher card (might be the element itself or a parent)
-  const card = element.closest('.jp-LauncherCard') as HTMLElement | null;
-  if (!card) {
+function kernelDisplayNameForCard(card: HTMLElement): string | null {
+  const icon = card.querySelector<HTMLImageElement>(
+    'img.jp-Launcher-kernelIcon'
+  );
+  if (!icon) {
     return null;
   }
-
-  // Find the label element within the card
-  const label = card.querySelector('.jp-LauncherCard-label');
-  if (label && label.textContent) {
-    return label.textContent.trim();
-  }
-
-  // Fallback: try the title attribute
-  if (card.title) {
-    return card.title;
-  }
-
-  return null;
+  const label = card
+    .querySelector('.jp-LauncherCard-label')
+    ?.textContent?.trim();
+  const displayName = (icon.alt || label || card.title || '').trim();
+  return displayName || null;
 }
 
 /**
- * Setup event listener to capture right-clicked kernel name.
+ * Stamp the kernel descriptor onto a single launcher card if it is a kernel
+ * card. Idempotent.
  *
- * Always resets `lastClickedKernelName` on every contextmenu event so a
- * stale value from a previous right-click on a launcher card cannot leak
- * into a subsequent command invocation triggered from a different context.
+ * @param card - A `.jp-LauncherCard` element
  */
-function setupContextMenuCapture(): void {
-  document.addEventListener(
-    'contextmenu',
-    (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const card = target ? target.closest('.jp-LauncherCard') : null;
-      lastClickedKernelName = card
-        ? extractKernelNameFromCard(target as HTMLElement)
-        : null;
-    },
-    true
-  ); // Use capture phase to get event before context menu
+function enrichKernelCard(card: HTMLElement): void {
+  if (card.hasAttribute(KERNEL_CARD_ATTR)) {
+    return;
+  }
+  const displayName = kernelDisplayNameForCard(card);
+  if (displayName) {
+    card.setAttribute(KERNEL_CARD_ATTR, displayName);
+  }
+}
+
+/**
+ * Scan a subtree for launcher cards and enrich any kernel cards under it.
+ *
+ * @param root - A DOM node to search within (inclusive of itself)
+ */
+function enrichKernelCardsIn(root: ParentNode): void {
+  if (
+    root instanceof HTMLElement &&
+    root.classList.contains('jp-LauncherCard')
+  ) {
+    enrichKernelCard(root);
+  }
+  root
+    .querySelectorAll<HTMLElement>('.jp-LauncherCard')
+    .forEach(enrichKernelCard);
+}
+
+/**
+ * Watch the shell for launcher cards being rendered and stamp the kernel
+ * descriptor on every kernel card - including ones added later, e.g. after
+ * an environment scan re-renders the launcher body.
+ *
+ * @param shellNode - The application shell DOM node to observe
+ */
+function observeLauncherCards(shellNode: HTMLElement): void {
+  // Stamp anything already present (a launcher may be open at startup).
+  enrichKernelCardsIn(shellNode);
+
+  const observer = new MutationObserver(mutations => {
+    for (const m of mutations) {
+      m.addedNodes.forEach(node => {
+        if (node instanceof HTMLElement) {
+          enrichKernelCardsIn(node);
+        }
+      });
+    }
+  });
+  observer.observe(shellNode, { childList: true, subtree: true });
+}
+
+/**
+ * Return the kernel display name from the launcher card under the last
+ * context menu invocation, or null if the menu was not opened on a kernel
+ * card. Uses JupyterLab's context-menu hit-test API - no global state, no
+ * guessing.
+ *
+ * @param app - The JupyterLab application
+ * @returns The kernel display name, or null
+ */
+function clickedKernelDisplayName(app: JupyterFrontEnd): string | null {
+  const card = app.contextMenuHitTest(node =>
+    node.hasAttribute(KERNEL_CARD_ATTR)
+  );
+  return card?.getAttribute(KERNEL_CARD_ATTR) ?? null;
 }
 
 /**
@@ -541,8 +599,11 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // Get the server root directory from PageConfig
     const serverRoot = PageConfig.getOption('serverRoot');
 
-    // Setup event listener to capture kernel name on right-click
-    setupContextMenuCapture();
+    // Stamp an explicit kernel descriptor on every kernel launcher card so
+    // the context menu (registered in schema/plugin.json against
+    // `.jp-LauncherCard[data-jp-kernel-display-name]`) only ever appears on
+    // kernel cards - never on Terminal, Text File, service, or other cards.
+    observeLauncherCards(app.shell.node);
 
     // Check if nb_venv_kernels is available (for unregister feature)
     checkNbVenvKernelsAvailable().then(available => {
@@ -558,9 +619,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
     commands.addCommand(SHOW_IN_BROWSER_CMD, {
       label: 'Show in File Browser',
       caption: "Navigate file browser to kernel's directory",
-      isEnabled: () => lastClickedKernelName !== null,
+      isEnabled: () => clickedKernelDisplayName(app) !== null,
       execute: async () => {
-        if (!lastClickedKernelName) {
+        const displayName = clickedKernelDisplayName(app);
+        if (!displayName) {
           await showErrorMessage(
             'No Kernel Selected',
             'Could not determine which kernel was selected.'
@@ -568,12 +630,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        const kernelInfo = await fetchKernelPath(lastClickedKernelName);
+        const kernelInfo = await fetchKernelPath(displayName);
 
         if (!kernelInfo) {
           await showErrorMessage(
             'Kernel Not Found',
-            `Could not find path information for kernel "${lastClickedKernelName}".`
+            `Could not find path information for kernel "${displayName}".`
           );
           return;
         }
@@ -583,7 +645,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const content = document.createElement('div');
           content.innerHTML = `
             <p>Global conda environments are not associated with any specific project location.</p>
-            <p>The environment <strong>${lastClickedKernelName}</strong> is installed at:</p>
+            <p>The environment <strong>${displayName}</strong> is installed at:</p>
             <p><code>${kernelInfo.env_path || kernelInfo.resource_dir}</code></p>
           `;
           const body = new Widget({ node: content });
@@ -622,9 +684,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
       label: 'Open Terminal at Location',
       caption: "Open a terminal at the kernel's directory",
       isEnabled: () =>
-        lastClickedKernelName !== null && terminalTracker !== null,
+        clickedKernelDisplayName(app) !== null && terminalTracker !== null,
       execute: async () => {
-        if (!lastClickedKernelName) {
+        const displayName = clickedKernelDisplayName(app);
+        if (!displayName) {
           await showErrorMessage(
             'No Kernel Selected',
             'Could not determine which kernel was selected.'
@@ -632,12 +695,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        const kernelInfo = await fetchKernelPath(lastClickedKernelName);
+        const kernelInfo = await fetchKernelPath(displayName);
 
         if (!kernelInfo) {
           await showErrorMessage(
             'Kernel Not Found',
-            `Could not find path information for kernel "${lastClickedKernelName}".`
+            `Could not find path information for kernel "${displayName}".`
           );
           return;
         }
@@ -647,7 +710,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           const content = document.createElement('div');
           content.innerHTML = `
             <p>Global conda environments are not associated with any specific project location.</p>
-            <p>The environment <strong>${lastClickedKernelName}</strong> is installed at:</p>
+            <p>The environment <strong>${displayName}</strong> is installed at:</p>
             <p><code>${kernelInfo.env_path || kernelInfo.resource_dir}</code></p>
           `;
           const body = new Widget({ node: content });
@@ -687,10 +750,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
     commands.addCommand(UNREGISTER_KERNEL_CMD, {
       label: 'Unregister Kernel',
       caption: 'Remove this kernel from nb_venv_kernels registry',
-      isEnabled: () => lastClickedKernelName !== null && nbVenvKernelsAvailable,
+      isEnabled: () =>
+        clickedKernelDisplayName(app) !== null && nbVenvKernelsAvailable,
       isVisible: () => nbVenvKernelsAvailable,
       execute: async () => {
-        if (!lastClickedKernelName) {
+        const displayName = clickedKernelDisplayName(app);
+        if (!displayName) {
           await showErrorMessage(
             'No Kernel Selected',
             'Could not determine which kernel was selected.'
@@ -701,16 +766,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
-        const kernelInfo = await fetchKernelPath(lastClickedKernelName);
+        const kernelInfo = await fetchKernelPath(displayName);
         const env = await findVenvEnvironment(
-          lastClickedKernelName,
+          displayName,
           kernelInfo?.executable_path
         );
 
         if (!env) {
           await showErrorMessage(
             'Cannot Unregister',
-            `"${lastClickedKernelName}" is not managed by nb_venv_kernels.`
+            `"${displayName}" is not managed by nb_venv_kernels.`
           );
           return;
         }
@@ -764,10 +829,12 @@ const plugin: JupyterFrontEndPlugin<void> = {
     commands.addCommand(REMOVE_ENVIRONMENT_CMD, {
       label: 'Remove Environment (dangerous)',
       caption: 'Physically remove the .venv folder containing this environment',
-      isEnabled: () => lastClickedKernelName !== null && nbVenvKernelsAvailable,
+      isEnabled: () =>
+        clickedKernelDisplayName(app) !== null && nbVenvKernelsAvailable,
       isVisible: () => nbVenvKernelsAvailable,
       execute: async () => {
-        if (!lastClickedKernelName) {
+        const displayName = clickedKernelDisplayName(app);
+        if (!displayName) {
           await showErrorMessage(
             'No Kernel Selected',
             'Could not determine which kernel was selected.'
@@ -778,16 +845,16 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
-        const kernelInfo = await fetchKernelPath(lastClickedKernelName);
+        const kernelInfo = await fetchKernelPath(displayName);
         const env = await findVenvEnvironment(
-          lastClickedKernelName,
+          displayName,
           kernelInfo?.executable_path
         );
 
         if (!env) {
           await showErrorMessage(
             'Cannot Remove',
-            `"${lastClickedKernelName}" is not managed by nb_venv_kernels.`
+            `"${displayName}" is not managed by nb_venv_kernels.`
           );
           return;
         }
