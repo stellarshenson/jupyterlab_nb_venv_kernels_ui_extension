@@ -454,14 +454,15 @@ async function removeDirectory(
 }
 
 /**
- * Delete a Jupyter kernelspec via the standard server API.
+ * Delete a Jupyter kernelspec via our extension's backend endpoint.
  *
- * Used to remove standalone (non-nb_venv_kernels-managed) local kernels
- * that the user wants to unregister. The endpoint is
- * `DELETE /api/kernelspecs/<kernel_name>` which calls
- * `KernelSpecManager.remove_kernel_spec` server-side and deletes the
- * kernelspec's `resource_dir`. Global kernelspecs are protected at the
- * call site, not here.
+ * Uses `DELETE /api/kernelspec-remove/<kernel_name>` which we provide
+ * because jupyter_server's standard `/api/kernelspecs/<name>` only
+ * implements GET (it returns 405 Method Not Allowed for DELETE).
+ *
+ * The backend additionally refuses to delete a kernelspec whose
+ * `resource_dir` is not under the user's home - a defense in depth on
+ * top of the frontend's `is_local` check at the call site.
  *
  * @param kernelName - The kernelspec name (not display name)
  * @returns success status and optional error message
@@ -473,7 +474,7 @@ async function deleteKernelspec(
   const url = URLExt.join(
     settings.baseUrl,
     'api',
-    'kernelspecs',
+    'kernelspec-remove',
     encodeURIComponent(kernelName)
   );
   try {
@@ -483,10 +484,16 @@ async function deleteKernelspec(
       settings
     );
     if (!response.ok) {
-      const text = await response.text();
+      let detail = '';
+      try {
+        const body = await response.json();
+        detail = body?.error || JSON.stringify(body);
+      } catch {
+        detail = await response.text();
+      }
       return {
         success: false,
-        error: `Server error: ${response.status} ${text}`
+        error: `Server error: ${response.status} ${detail}`
       };
     }
     return { success: true };

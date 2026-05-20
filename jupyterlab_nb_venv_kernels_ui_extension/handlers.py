@@ -280,6 +280,72 @@ class KernelPathHandler(APIHandler):
         return (None, False)
 
 
+class KernelspecDeleteHandler(APIHandler):
+    """Delete a Jupyter kernelspec by name.
+
+    Provided because jupyter_server's standard `/api/kernelspecs/<name>`
+    handler only implements GET - there is no upstream DELETE, so the
+    frontend cannot remove a standalone kernelspec without this endpoint.
+
+    Refuses to delete a kernelspec whose `resource_dir` is not under the
+    current user's home directory (system / global kernelspecs).
+    """
+
+    @tornado.web.authenticated
+    async def delete(self, kernel_name: str):
+        """Delete the kernelspec named `kernel_name` if it is local.
+
+        Args:
+            kernel_name: The kernelspec name (URL-decoded by tornado)
+        """
+        try:
+            ksm = KernelSpecManager()
+            try:
+                spec = ksm.get_kernel_spec(kernel_name)
+            except Exception as e:
+                self.set_status(404)
+                self.finish(json.dumps({
+                    "error": f"Kernelspec '{kernel_name}' not found: {e}"
+                }))
+                return
+
+            resource_dir = spec.resource_dir or ""
+            home = ""
+            try:
+                home = os.path.expanduser("~")
+            except Exception:
+                home = ""
+            if not home or home == "~":
+                self.set_status(500)
+                self.finish(json.dumps({
+                    "error": "Could not determine user home directory"
+                }))
+                return
+            home_prefix = home.rstrip(os.sep) + os.sep
+            if not resource_dir.startswith(home_prefix):
+                self.set_status(403)
+                self.finish(json.dumps({
+                    "error": (
+                        f"Refusing to delete non-local kernelspec at "
+                        f"{resource_dir}"
+                    ),
+                    "resource_dir": resource_dir
+                }))
+                return
+
+            ksm.remove_kernel_spec(kernel_name)
+            self.finish(json.dumps({
+                "success": True,
+                "kernel_name": kernel_name,
+                "resource_dir": resource_dir
+            }))
+
+        except Exception as e:
+            self.log.error(f"Error deleting kernelspec: {e}")
+            self.set_status(500)
+            self.finish(json.dumps({"error": str(e)}))
+
+
 def setup_handlers(web_app):
     """Setup the API handlers.
 
@@ -291,12 +357,24 @@ def setup_handlers(web_app):
 
     # Route pattern for kernel path endpoint
     # The display_name may contain special characters, so we use a broad pattern
-    route_pattern = url_path_join(
+    kernel_path_route = url_path_join(
         base_url,
         "api",
         "kernel-path",
         "(.+)"  # display_name parameter (URL-encoded)
     )
 
-    handlers = [(route_pattern, KernelPathHandler)]
+    # Route pattern for kernelspec deletion - separate path from the
+    # standard /api/kernelspecs/<name> (which only supports GET upstream).
+    kernelspec_delete_route = url_path_join(
+        base_url,
+        "api",
+        "kernelspec-remove",
+        "(.+)"  # kernel_name parameter (URL-encoded)
+    )
+
+    handlers = [
+        (kernel_path_route, KernelPathHandler),
+        (kernelspec_delete_route, KernelspecDeleteHandler)
+    ]
     web_app.add_handlers(host_pattern, handlers)
