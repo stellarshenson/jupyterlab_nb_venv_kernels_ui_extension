@@ -436,6 +436,45 @@ describe('findVenvEnvironment matching', () => {
   });
 });
 
+// Mirror of the .venv-directory extraction used by REMOVE_ENVIRONMENT_CMD
+// when handling a standalone kernelspec: pull the `.venv` dir out of an
+// executable_path like `/path/to/.venv/bin/python`.
+function venvDirFromExecutable(exe: string | null | undefined): string | null {
+  if (!exe) {
+    return null;
+  }
+  const m = exe.match(/^(.*\/\.venv)\/bin\/[^/]+$/);
+  return m ? m[1] : null;
+}
+
+describe('venvDirFromExecutable (standalone remove path)', () => {
+  it('extracts .venv root for standard layout', () => {
+    expect(venvDirFromExecutable('/home/u/proj/.venv/bin/python')).toBe(
+      '/home/u/proj/.venv'
+    );
+  });
+
+  it('handles other binary names under bin/', () => {
+    expect(venvDirFromExecutable('/home/u/proj/.venv/bin/python3.12')).toBe(
+      '/home/u/proj/.venv'
+    );
+  });
+
+  it('returns null when executable is not under a .venv/bin', () => {
+    expect(venvDirFromExecutable('/opt/conda/bin/python')).toBeNull();
+    expect(
+      venvDirFromExecutable('/opt/conda/envs/myenv/bin/python')
+    ).toBeNull();
+  });
+
+  it('returns null for empty / undefined / relative paths', () => {
+    expect(venvDirFromExecutable(null)).toBeNull();
+    expect(venvDirFromExecutable(undefined)).toBeNull();
+    expect(venvDirFromExecutable('')).toBeNull();
+    expect(venvDirFromExecutable('python')).toBeNull();
+  });
+});
+
 describe('context menu configuration', () => {
   it('should define all expected context menu commands', () => {
     const contextItems = pluginSchema['jupyter.lab.menus'].context;

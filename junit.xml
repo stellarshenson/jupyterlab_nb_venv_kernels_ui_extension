@@ -1,41 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="18" failures="0" errors="0" time="1.265">
-  <testsuite name="kernel card enrichment" errors="0" failures="0" skipped="0" timestamp="2026-05-12T09:19:21" time="0.737" tests="18">
-    <testcase classname="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" name="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" time="0.007">
+<testsuites name="jest tests" tests="22" failures="0" errors="0" time="4.013">
+  <testsuite name="kernel card enrichment" errors="0" failures="0" skipped="0" timestamp="2026-05-20T13:12:46" time="1.872" tests="22">
+    <testcase classname="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" name="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" time="0.019">
     </testcase>
-    <testcase classname="kernel card enrichment falls back to the label text when the icon has no alt" name="kernel card enrichment falls back to the label text when the icon has no alt" time="0.001">
+    <testcase classname="kernel card enrichment falls back to the label text when the icon has no alt" name="kernel card enrichment falls back to the label text when the icon has no alt" time="0.004">
     </testcase>
-    <testcase classname="kernel card enrichment does not stamp a non-kernel card (no jp-Launcher-kernelIcon)" name="kernel card enrichment does not stamp a non-kernel card (no jp-Launcher-kernelIcon)" time="0.003">
+    <testcase classname="kernel card enrichment does not stamp a non-kernel card (no jp-Launcher-kernelIcon)" name="kernel card enrichment does not stamp a non-kernel card (no jp-Launcher-kernelIcon)" time="0.009">
     </testcase>
-    <testcase classname="kernel card enrichment is idempotent and preserves the first stamped value" name="kernel card enrichment is idempotent and preserves the first stamped value" time="0.001">
+    <testcase classname="kernel card enrichment is idempotent and preserves the first stamped value" name="kernel card enrichment is idempotent and preserves the first stamped value" time="0.005">
     </testcase>
-    <testcase classname="kernel card enrichment stamped kernel cards match the context menu selector; others do not" name="kernel card enrichment stamped kernel cards match the context menu selector; others do not" time="0.002">
+    <testcase classname="kernel card enrichment stamped kernel cards match the context menu selector; others do not" name="kernel card enrichment stamped kernel cards match the context menu selector; others do not" time="0.007">
     </testcase>
-    <testcase classname="findVenvEnvironment matching selects correct env by executable path when names overlap" name="findVenvEnvironment matching selects correct env by executable path when names overlap" time="0">
+    <testcase classname="findVenvEnvironment matching selects correct env by executable path when names overlap" name="findVenvEnvironment matching selects correct env by executable path when names overlap" time="0.001">
     </testcase>
     <testcase classname="findVenvEnvironment matching selects shorter-named env by executable path" name="findVenvEnvironment matching selects shorter-named env by executable path" time="0">
     </testcase>
-    <testcase classname="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" name="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" time="0">
+    <testcase classname="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" name="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" time="0.001">
     </testcase>
-    <testcase classname="findVenvEnvironment matching falls back to longest-name substring match when path missing" name="findVenvEnvironment matching falls back to longest-name substring match when path missing" time="0">
+    <testcase classname="findVenvEnvironment matching falls back to longest-name substring match when path missing" name="findVenvEnvironment matching falls back to longest-name substring match when path missing" time="0.001">
     </testcase>
-    <testcase classname="findVenvEnvironment matching matches custom_name in fallback path" name="findVenvEnvironment matching matches custom_name in fallback path" time="0">
+    <testcase classname="findVenvEnvironment matching matches custom_name in fallback path" name="findVenvEnvironment matching matches custom_name in fallback path" time="0.001">
     </testcase>
-    <testcase classname="findVenvEnvironment matching skips conda envs in path-based matching" name="findVenvEnvironment matching skips conda envs in path-based matching" time="0.001">
+    <testcase classname="findVenvEnvironment matching skips conda envs in path-based matching" name="findVenvEnvironment matching skips conda envs in path-based matching" time="0">
     </testcase>
     <testcase classname="findVenvEnvironment matching returns null when no env matches and path is unset" name="findVenvEnvironment matching returns null when no env matches and path is unset" time="0">
     </testcase>
-    <testcase classname="findVenvEnvironment matching matches when env.path is relative to workspace_root" name="findVenvEnvironment matching matches when env.path is relative to workspace_root" time="0">
+    <testcase classname="findVenvEnvironment matching matches when env.path is relative to workspace_root" name="findVenvEnvironment matching matches when env.path is relative to workspace_root" time="0.001">
     </testcase>
-    <testcase classname="findVenvEnvironment matching disambiguates relative env paths sharing a prefix" name="findVenvEnvironment matching disambiguates relative env paths sharing a prefix" time="0">
+    <testcase classname="findVenvEnvironment matching disambiguates relative env paths sharing a prefix" name="findVenvEnvironment matching disambiguates relative env paths sharing a prefix" time="0.001">
     </testcase>
     <testcase classname="findVenvEnvironment matching falls back to substring when env paths are relative and workspace_root is missing" name="findVenvEnvironment matching falls back to substring when env paths are relative and workspace_root is missing" time="0">
     </testcase>
+    <testcase classname="venvDirFromExecutable (standalone remove path) extracts .venv root for standard layout" name="venvDirFromExecutable (standalone remove path) extracts .venv root for standard layout" time="0.001">
+    </testcase>
+    <testcase classname="venvDirFromExecutable (standalone remove path) handles other binary names under bin/" name="venvDirFromExecutable (standalone remove path) handles other binary names under bin/" time="0">
+    </testcase>
+    <testcase classname="venvDirFromExecutable (standalone remove path) returns null when executable is not under a .venv/bin" name="venvDirFromExecutable (standalone remove path) returns null when executable is not under a .venv/bin" time="0.001">
+    </testcase>
+    <testcase classname="venvDirFromExecutable (standalone remove path) returns null for empty / undefined / relative paths" name="venvDirFromExecutable (standalone remove path) returns null for empty / undefined / relative paths" time="0.001">
+    </testcase>
     <testcase classname="context menu configuration should define all expected context menu commands" name="context menu configuration should define all expected context menu commands" time="0.001">
     </testcase>
-    <testcase classname="context menu configuration should target only kernel launcher cards (descriptor selector)" name="context menu configuration should target only kernel launcher cards (descriptor selector)" time="0">
+    <testcase classname="context menu configuration should target only kernel launcher cards (descriptor selector)" name="context menu configuration should target only kernel launcher cards (descriptor selector)" time="0.002">
     </testcase>
-    <testcase classname="context menu configuration should have correct menu item order by rank" name="context menu configuration should have correct menu item order by rank" time="0">
+    <testcase classname="context menu configuration should have correct menu item order by rank" name="context menu configuration should have correct menu item order by rank" time="0.001">
     </testcase>
   </testsuite>
 </testsuites>

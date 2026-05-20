@@ -33,6 +33,14 @@ interface IKernelPathResponse {
   executable_path: string | null;
   env_path: string | null;
   is_global_conda: boolean;
+  /**
+   * True when the kernelspec's `resource_dir` is under the user's home
+   * directory (e.g. `~/.local/share/jupyter/kernels/`). Local kernelspecs
+   * may be removed by the plugin via `DELETE /api/kernelspecs/<name>`
+   * when not managed by nb_venv_kernels; global / system kernelspecs may
+   * not - they require admin action.
+   */
+  is_local: boolean;
   error?: string;
 }
 
@@ -446,6 +454,79 @@ async function removeDirectory(
 }
 
 /**
+ * Delete a Jupyter kernelspec via the standard server API.
+ *
+ * Used to remove standalone (non-nb_venv_kernels-managed) local kernels
+ * that the user wants to unregister. The endpoint is
+ * `DELETE /api/kernelspecs/<kernel_name>` which calls
+ * `KernelSpecManager.remove_kernel_spec` server-side and deletes the
+ * kernelspec's `resource_dir`. Global kernelspecs are protected at the
+ * call site, not here.
+ *
+ * @param kernelName - The kernelspec name (not display name)
+ * @returns success status and optional error message
+ */
+async function deleteKernelspec(
+  kernelName: string
+): Promise<{ success: boolean; error?: string }> {
+  const settings = ServerConnection.makeSettings();
+  const url = URLExt.join(
+    settings.baseUrl,
+    'api',
+    'kernelspecs',
+    encodeURIComponent(kernelName)
+  );
+  try {
+    const response = await ServerConnection.makeRequest(
+      url,
+      { method: 'DELETE' },
+      settings
+    );
+    if (!response.ok) {
+      const text = await response.text();
+      return {
+        success: false,
+        error: `Server error: ${response.status} ${text}`
+      };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting kernelspec:', error);
+    return { success: false, error: `Network error: ${error}` };
+  }
+}
+
+/**
+ * Show a refusal dialog for global kernelspecs that are not managed by
+ * nb_venv_kernels.
+ *
+ * @param displayName - The kernel display name (for the title)
+ * @param resourceDir - The kernelspec directory (shown to the user)
+ */
+async function refuseGlobalKernelspec(
+  displayName: string,
+  resourceDir: string
+): Promise<void> {
+  const body = new Widget();
+  const p1 = document.createElement('p');
+  p1.textContent = `"${displayName}" is a system kernelspec not managed by nb_venv_kernels.`;
+  const p2 = document.createElement('p');
+  p2.textContent = `It lives at: ${resourceDir}`;
+  const p3 = document.createElement('p');
+  p3.textContent =
+    'Global kernelspecs can only be removed manually (e.g. by an administrator). ' +
+    'To remove it, run: jupyter kernelspec uninstall <name>';
+  body.node.appendChild(p1);
+  body.node.appendChild(p2);
+  body.node.appendChild(p3);
+  await showDialog({
+    title: 'Cannot Remove System Kernelspec',
+    body,
+    buttons: [Dialog.okButton()]
+  });
+}
+
+/**
  * Expand tilde in path using the home directory extracted from absolutePath.
  *
  * @param path - Path that may contain ~
@@ -807,9 +888,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
+        let kernelInfo: IKernelPathResponse | null;
         let env: IVenvEnvironment | null;
         try {
-          const kernelInfo = await fetchKernelPath(displayName);
+          kernelInfo = await fetchKernelPath(displayName);
           env = await findVenvEnvironment(
             displayName,
             kernelInfo?.executable_path
@@ -818,11 +900,53 @@ const plugin: JupyterFrontEndPlugin<void> = {
           resolveDialog.dispose();
         }
 
+        // Standalone kernelspec path: nb_venv_kernels does not know about
+        // this kernel. For local kernelspecs (under the user's home) we
+        // delete the kernelspec directly via the standard Jupyter API; for
+        // system / global kernelspecs we refuse.
         if (!env) {
-          await showErrorMessage(
-            'Cannot Unregister',
-            `"${displayName}" is not managed by nb_venv_kernels.`
+          if (!kernelInfo) {
+            await showErrorMessage(
+              'Cannot Unregister',
+              `Could not resolve kernel "${displayName}".`
+            );
+            return;
+          }
+          if (!kernelInfo.is_local) {
+            await refuseGlobalKernelspec(displayName, kernelInfo.resource_dir);
+            return;
+          }
+          const deleteDialog = showLoadingDialog(
+            `Deleting kernelspec "${kernelInfo.kernel_name}"...`
           );
+          let deleteResult;
+          try {
+            deleteResult = await deleteKernelspec(kernelInfo.kernel_name);
+          } finally {
+            deleteDialog.dispose();
+          }
+          if (deleteResult.success) {
+            await commands.execute(NB_VENV_KERNELS_REFRESH_CMD).catch(() => {
+              // Ignore if refresh command not available
+            });
+            const bodyWidget = new Widget();
+            const p1 = document.createElement('p');
+            p1.textContent = `Successfully removed standalone kernelspec "${displayName}".`;
+            const p2 = document.createElement('p');
+            p2.textContent = `Deleted: ${kernelInfo.resource_dir}`;
+            bodyWidget.node.appendChild(p1);
+            bodyWidget.node.appendChild(p2);
+            await showDialog({
+              title: 'Kernelspec Removed',
+              body: bodyWidget,
+              buttons: [Dialog.okButton()]
+            });
+          } else {
+            await showErrorMessage(
+              'Unregister Failed',
+              `Failed to delete kernelspec: ${deleteResult.error}`
+            );
+          }
           return;
         }
 
@@ -896,9 +1020,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
+        let kernelInfo: IKernelPathResponse | null;
         let env: IVenvEnvironment | null;
         try {
-          const kernelInfo = await fetchKernelPath(displayName);
+          kernelInfo = await fetchKernelPath(displayName);
           env = await findVenvEnvironment(
             displayName,
             kernelInfo?.executable_path
@@ -907,11 +1032,97 @@ const plugin: JupyterFrontEndPlugin<void> = {
           resolveDialog.dispose();
         }
 
+        // Standalone kernelspec path: nb_venv_kernels does not know about
+        // this kernel. For local kernelspecs we delete the kernelspec dir
+        // (and try to delete the .venv folder if executable_path points to
+        // one that still exists); for global kernelspecs we refuse.
         if (!env) {
-          await showErrorMessage(
-            'Cannot Remove',
-            `"${displayName}" is not managed by nb_venv_kernels.`
+          if (!kernelInfo) {
+            await showErrorMessage(
+              'Cannot Remove',
+              `Could not resolve kernel "${displayName}".`
+            );
+            return;
+          }
+          if (!kernelInfo.is_local) {
+            await refuseGlobalKernelspec(displayName, kernelInfo.resource_dir);
+            return;
+          }
+          // Derive the .venv directory from executable_path (".venv/bin/...").
+          const exe = kernelInfo.executable_path || '';
+          const venvMatch = exe.match(/^(.*\/\.venv)\/bin\/[^/]+$/);
+          const venvDir = venvMatch ? venvMatch[1] : null;
+
+          const confirmWidget = new Widget();
+          const confirmP1 = document.createElement('p');
+          confirmP1.textContent = `"${displayName}" is a standalone kernelspec not managed by nb_venv_kernels.`;
+          const confirmP2 = document.createElement('p');
+          confirmP2.textContent = `This will delete the kernelspec at: ${kernelInfo.resource_dir}`;
+          confirmWidget.node.appendChild(confirmP1);
+          confirmWidget.node.appendChild(confirmP2);
+          if (venvDir) {
+            const confirmP3 = document.createElement('p');
+            confirmP3.textContent = `It will also attempt to delete the environment at: ${venvDir} (if present).`;
+            confirmWidget.node.appendChild(confirmP3);
+          }
+          const confirmP4 = document.createElement('p');
+          confirmP4.style.fontWeight = 'bold';
+          confirmP4.textContent = 'This action cannot be undone!';
+          confirmWidget.node.appendChild(confirmP4);
+
+          const confirm = await showDialog({
+            title: 'Remove Standalone Kernelspec',
+            body: confirmWidget,
+            buttons: [
+              Dialog.cancelButton(),
+              Dialog.warnButton({ label: 'Remove' })
+            ]
+          });
+          if (!confirm.button.accept) {
+            return;
+          }
+
+          const removeDialog = showLoadingDialog(
+            `Removing kernelspec "${kernelInfo.kernel_name}"...`
           );
+          let deleteResult: { success: boolean; error?: string };
+          let venvResult: { success: boolean; error?: string } | null = null;
+          try {
+            deleteResult = await deleteKernelspec(kernelInfo.kernel_name);
+            if (deleteResult.success && venvDir) {
+              // Best-effort .venv removal - if it's already gone, that's fine
+              venvResult = await removeDirectory(venvDir, serverRoot);
+            }
+          } finally {
+            removeDialog.dispose();
+          }
+          if (!deleteResult.success) {
+            await showErrorMessage(
+              'Remove Failed',
+              `Failed to delete kernelspec: ${deleteResult.error}`
+            );
+            return;
+          }
+          await commands.execute(NB_VENV_KERNELS_REFRESH_CMD).catch(() => {
+            // Ignore if refresh command not available
+          });
+          const bodyWidget = new Widget();
+          const okP1 = document.createElement('p');
+          okP1.textContent = `Removed kernelspec "${displayName}".`;
+          bodyWidget.node.appendChild(okP1);
+          if (venvDir) {
+            const okP2 = document.createElement('p');
+            okP2.textContent =
+              venvResult && venvResult.success
+                ? `Also removed environment at: ${venvDir}`
+                : `Environment at ${venvDir} was not removed (likely already gone).`;
+            bodyWidget.node.appendChild(okP2);
+          }
+          await showDialog({
+            title: 'Kernelspec Removed',
+            body: bodyWidget,
+            buttons: [Dialog.okButton()]
+          });
           return;
         }
 

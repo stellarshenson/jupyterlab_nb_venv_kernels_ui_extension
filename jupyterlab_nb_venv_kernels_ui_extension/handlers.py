@@ -92,13 +92,20 @@ class KernelPathHandler(APIHandler):
                 executable_path, resource_dir
             )
 
+            # Classify kernelspec as local (under user's home) or global
+            # (system-wide). The launcher context menu uses this to decide
+            # whether a non-nb_venv_kernels-managed kernel may be deleted
+            # via DELETE /api/kernelspecs/<name>: local yes, global no.
+            is_local = self._is_local_kernelspec(resource_dir)
+
             self.finish(json.dumps({
                 "kernel_name": kernel_name,
                 "display_name": display_name,
                 "resource_dir": resource_dir,
                 "executable_path": executable_path,
                 "env_path": env_path,
-                "is_global_conda": is_global_conda
+                "is_global_conda": is_global_conda,
+                "is_local": is_local
             }))
 
         except Exception as e:
@@ -107,6 +114,34 @@ class KernelPathHandler(APIHandler):
             self.finish(json.dumps({
                 "error": str(e)
             }))
+
+    def _is_local_kernelspec(self, resource_dir: str) -> bool:
+        """Return True if the kernelspec lives under the current user's home.
+
+        Local kernelspecs (e.g. `~/.local/share/jupyter/kernels/<name>` on
+        Linux, `~/Library/Jupyter/kernels/<name>` on macOS) are safe for the
+        plugin to delete via `DELETE /api/kernelspecs/<name>` when not
+        managed by nb_venv_kernels. System / global kernelspecs (e.g.
+        `/opt/conda/share/jupyter/kernels/`, `/usr/local/share/jupyter/...`,
+        `/usr/share/jupyter/...`) are not - touching those needs admin
+        action, so the launcher menu refuses to remove them.
+
+        Args:
+            resource_dir: The kernelspec's filesystem directory
+
+        Returns:
+            True if `resource_dir` is under the user's home directory
+        """
+        if not resource_dir:
+            return False
+        try:
+            home = os.path.expanduser("~")
+        except Exception:
+            return False
+        if not home or home == "~":
+            return False
+        home = home.rstrip(os.sep) + os.sep
+        return resource_dir.startswith(home)
 
     def _extract_env_path(
         self,
