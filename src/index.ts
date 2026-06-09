@@ -653,6 +653,12 @@ function enrichKernelCard(card: HTMLElement): void {
   const displayName = kernelDisplayNameForCard(card);
   if (displayName) {
     card.setAttribute(KERNEL_CARD_ATTR, displayName);
+    // Best-effort: fetch kernel info in the background and rewrite the
+    // native `title` so the standard hover tooltip shows display name +
+    // kernel name + kind + paths instead of just the display name.
+    enhanceKernelCardTitle(card, displayName).catch(() => {
+      // Swallow - title enrichment is a UX nicety, not load-critical.
+    });
   }
 }
 
@@ -713,82 +719,30 @@ function clickedKernelDisplayName(app: JupyterFrontEnd): string | null {
 }
 
 /**
- * Cache of kernel-path responses keyed by display name, populated lazily by
- * the hover tooltip on first hover per kernel.
+ * Cache of kernel-path responses keyed by display name. Each kernel card
+ * fires a single background fetch on enrichment; cards rendered later for
+ * the same kernel reuse the cached info.
  */
 const kernelInfoCache = new Map<string, IKernelPathResponse>();
 
 /**
- * The singleton hover-tooltip element (lazily created), and a monotonic
- * token used to cancel in-flight show requests when the user moves on.
+ * In-flight fetches keyed by display name, so two cards for the same
+ * kernel (e.g. one in Notebook section, one in Console) share a single
+ * round-trip instead of racing.
  */
-let tooltipEl: HTMLDivElement | null = null;
-let tooltipShowToken = 0;
-let tooltipShowTimer: number | null = null;
+const kernelInfoInflight = new Map<
+  string,
+  Promise<IKernelPathResponse | null>
+>();
 
 /**
- * Escape a string for safe HTML interpolation in the tooltip body.
+ * Build a multi-line plain-text tooltip body for a kernel.
  *
- * Kernel display names / paths come from kernelspec metadata which is
- * effectively user-controlled, so any HTML special characters must be
- * encoded to prevent injection into the tooltip markup.
+ * Browsers render `\n` in the `title` attribute as line breaks in the
+ * native hover tooltip, so this is just the standard JupyterLab card
+ * tooltip with extra rows underneath the display name.
  */
-function escapeHtml(s: string | null | undefined): string {
-  return (s || '').replace(/[<>&"]/g, c => {
-    if (c === '<') {
-      return '&lt;';
-    }
-    if (c === '>') {
-      return '&gt;';
-    }
-    if (c === '&') {
-      return '&amp;';
-    }
-    return '&quot;';
-  });
-}
-
-/**
- * Lazily create and return the singleton tooltip element appended to body.
- *
- * Styled with JupyterLab CSS variables so it tracks the active theme.
- */
-function ensureTooltipElement(): HTMLDivElement {
-  if (tooltipEl) {
-    return tooltipEl;
-  }
-  const el = document.createElement('div');
-  el.className = 'jp-NbVenvKernels-Tooltip';
-  el.setAttribute('role', 'tooltip');
-  Object.assign(el.style, {
-    position: 'fixed',
-    zIndex: '10000',
-    maxWidth: '560px',
-    padding: '10px 12px',
-    background: 'var(--jp-layout-color1, #fff)',
-    color: 'var(--jp-content-font-color1, #000)',
-    border: '1px solid var(--jp-border-color1, #ccc)',
-    borderRadius: '4px',
-    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.18)',
-    fontSize: '12px',
-    lineHeight: '1.4',
-    pointerEvents: 'none',
-    display: 'none',
-    wordBreak: 'break-all'
-  });
-  document.body.appendChild(el);
-  tooltipEl = el;
-  return el;
-}
-
-/**
- * Build the tooltip body HTML for a kernel.
- *
- * Sections: display name (header), then a table of fields: kernel name,
- * kind (local kernelspec / global conda environment / system kernelspec),
- * executable, resource dir, env path.
- */
-function buildKernelTooltipHtml(
+function buildKernelTooltipText(
   displayName: string,
   info: IKernelPathResponse
 ): string {
@@ -800,171 +754,59 @@ function buildKernelTooltipHtml(
   } else {
     kind = 'System kernelspec';
   }
-  const row = (label: string, value: string | null | undefined): string => {
-    if (!value) {
-      return '';
-    }
-    return (
-      '<tr>' +
-      '<td style="padding-right:10px;color:var(--jp-content-font-color2,#666);vertical-align:top;white-space:nowrap">' +
-      escapeHtml(label) +
-      '</td>' +
-      '<td><code style="font-family:var(--jp-code-font-family,monospace);font-size:11.5px">' +
-      escapeHtml(value) +
-      '</code></td>' +
-      '</tr>'
-    );
-  };
-  return (
-    '<div style="font-weight:600;font-size:13px;margin-bottom:6px;' +
-    'border-bottom:1px solid var(--jp-border-color2,#eee);padding-bottom:4px">' +
-    escapeHtml(displayName) +
-    '</div>' +
-    '<table style="border-collapse:collapse">' +
-    row('Kernel name', info.kernel_name) +
-    row('Kind', kind) +
-    row('Executable', info.executable_path) +
-    row('Resource dir', info.resource_dir) +
-    row('Env path', info.env_path) +
-    '</table>'
-  );
+  const lines: string[] = [displayName, ''];
+  lines.push(`Kernel name:   ${info.kernel_name}`);
+  lines.push(`Kind:          ${kind}`);
+  if (info.executable_path) {
+    lines.push(`Executable:    ${info.executable_path}`);
+  }
+  if (info.resource_dir) {
+    lines.push(`Resource dir:  ${info.resource_dir}`);
+  }
+  if (info.env_path) {
+    lines.push(`Env path:      ${info.env_path}`);
+  }
+  return lines.join('\n');
 }
 
 /**
- * Position the tooltip relative to a launcher card.
+ * Fetch kernel info (cached) and write the rich multi-line text into the
+ * card's native `title` attribute - the standard browser hover tooltip
+ * then shows display name plus kernel name, kind, executable, resource
+ * dir, env path without any custom popup.
  *
- * Default placement: to the right of the card, top-aligned. Flips to the
- * left if it would overflow the viewport, and slides up if the bottom
- * would overflow.
+ * Both the card and its inner `.jp-LauncherCard-label` carry a `title`;
+ * the label sits on top so we update both to keep behaviour consistent
+ * regardless of which sub-element the cursor lands on.
  */
-function positionTooltipNearCard(card: HTMLElement): void {
-  const el = tooltipEl;
-  if (!el) {
-    return;
-  }
-  const cardRect = card.getBoundingClientRect();
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  el.style.left = `${cardRect.right + 8}px`;
-  el.style.top = `${cardRect.top}px`;
-  const tipRect = el.getBoundingClientRect();
-  if (tipRect.right > vw - 8) {
-    el.style.left = `${Math.max(8, cardRect.left - tipRect.width - 8)}px`;
-  }
-  if (tipRect.bottom > vh - 8) {
-    el.style.top = `${Math.max(8, vh - tipRect.height - 8)}px`;
-  }
-}
-
-/**
- * Show the rich tooltip for the given launcher card.
- *
- * First hover per kernel triggers a `fetchKernelPath` call; subsequent
- * hovers read from `kernelInfoCache`. A race-safe token guards against
- * the user moving on while the fetch is in flight.
- */
-async function showKernelTooltip(card: HTMLElement): Promise<void> {
-  const displayName = card.getAttribute(KERNEL_CARD_ATTR);
-  if (!displayName) {
-    return;
-  }
-  const token = ++tooltipShowToken;
-  const el = ensureTooltipElement();
-  el.innerHTML =
-    '<div style="font-weight:600;font-size:13px">' +
-    escapeHtml(displayName) +
-    '</div>' +
-    '<div style="color:var(--jp-content-font-color2,#666);font-size:11px;margin-top:4px">Loading…</div>';
-  el.style.display = 'block';
-  positionTooltipNearCard(card);
-
-  let info = kernelInfoCache.get(displayName) || null;
+async function enhanceKernelCardTitle(
+  card: HTMLElement,
+  displayName: string
+): Promise<void> {
+  let info = kernelInfoCache.get(displayName) ?? null;
   if (!info) {
-    const fetched = await fetchKernelPath(displayName);
-    if (token !== tooltipShowToken) {
-      return;
+    let pending = kernelInfoInflight.get(displayName);
+    if (!pending) {
+      pending = fetchKernelPath(displayName).then(result => {
+        if (result) {
+          kernelInfoCache.set(displayName, result);
+        }
+        kernelInfoInflight.delete(displayName);
+        return result;
+      });
+      kernelInfoInflight.set(displayName, pending);
     }
-    if (fetched) {
-      kernelInfoCache.set(displayName, fetched);
-      info = fetched;
-    }
+    info = await pending;
   }
-  if (token !== tooltipShowToken) {
+  if (!info) {
     return;
   }
-  if (info) {
-    el.innerHTML = buildKernelTooltipHtml(displayName, info);
-    positionTooltipNearCard(card);
-  } else {
-    el.innerHTML =
-      '<div style="font-weight:600;font-size:13px">' +
-      escapeHtml(displayName) +
-      '</div>' +
-      '<div style="color:var(--jp-warn-color-normal,#c33);font-size:11px;margin-top:4px">Could not fetch kernel info.</div>';
+  const tooltip = buildKernelTooltipText(displayName, info);
+  card.setAttribute('title', tooltip);
+  const label = card.querySelector<HTMLElement>('.jp-LauncherCard-label');
+  if (label) {
+    label.setAttribute('title', tooltip);
   }
-}
-
-/**
- * Hide the tooltip and invalidate any pending show.
- */
-function hideKernelTooltip(): void {
-  tooltipShowToken++;
-  if (tooltipShowTimer !== null) {
-    window.clearTimeout(tooltipShowTimer);
-    tooltipShowTimer = null;
-  }
-  if (tooltipEl) {
-    tooltipEl.style.display = 'none';
-  }
-}
-
-/**
- * Install delegated `mouseover` / `mouseout` listeners on the shell node
- * that show / hide the rich hover tooltip for stamped kernel cards.
- *
- * @param shellNode - The application shell DOM node to delegate from
- */
-function setupKernelTooltips(shellNode: HTMLElement): void {
-  const SELECTOR = `.jp-LauncherCard[${KERNEL_CARD_ATTR}]`;
-  shellNode.addEventListener('mouseover', event => {
-    const target = event.target as HTMLElement | null;
-    if (!target) {
-      return;
-    }
-    const card = target.closest(SELECTOR) as HTMLElement | null;
-    if (!card) {
-      return;
-    }
-    // Moving within the same card - do nothing
-    const related = event.relatedTarget as HTMLElement | null;
-    if (related && card.contains(related)) {
-      return;
-    }
-    if (tooltipShowTimer !== null) {
-      window.clearTimeout(tooltipShowTimer);
-    }
-    tooltipShowTimer = window.setTimeout(() => {
-      tooltipShowTimer = null;
-      showKernelTooltip(card).catch(err =>
-        console.debug('Tooltip show failed:', err)
-      );
-    }, 250);
-  });
-  shellNode.addEventListener('mouseout', event => {
-    const target = event.target as HTMLElement | null;
-    if (!target) {
-      return;
-    }
-    const card = target.closest(SELECTOR) as HTMLElement | null;
-    if (!card) {
-      return;
-    }
-    const related = event.relatedTarget as HTMLElement | null;
-    if (related && card.contains(related)) {
-      return;
-    }
-    hideKernelTooltip();
-  });
 }
 
 /**
@@ -997,10 +839,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // `.jp-LauncherCard[data-jp-kernel-display-name]`) only ever appears on
     // kernel cards - never on Terminal, Text File, service, or other cards.
     observeLauncherCards(app.shell.node);
-
-    // Install rich hover-tooltip on stamped kernel cards. Lazy fetch of
-    // kernel-path info on first hover per kernel, cached afterwards.
-    setupKernelTooltips(app.shell.node);
 
     // Check if nb_venv_kernels is available (for unregister feature)
     checkNbVenvKernelsAvailable().then(available => {

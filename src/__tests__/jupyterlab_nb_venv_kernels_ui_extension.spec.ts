@@ -512,7 +512,9 @@ function venvDirFromExecutable(exe: string | null | undefined): string | null {
   return m ? m[1] : null;
 }
 
-// Mirror of buildKernelTooltipHtml and escapeHtml from src/index.ts.
+// Mirror of buildKernelTooltipText from src/index.ts. The native browser
+// `title` tooltip renders `\n` as line breaks, so we ship plain text - no
+// custom HTML popup, no escaping needed.
 interface IKernelInfoForTooltip {
   kernel_name: string;
   executable_path: string | null;
@@ -522,22 +524,7 @@ interface IKernelInfoForTooltip {
   is_local: boolean;
 }
 
-function escapeHtml(s: string | null | undefined): string {
-  return (s || '').replace(/[<>&"]/g, c => {
-    if (c === '<') {
-      return '&lt;';
-    }
-    if (c === '>') {
-      return '&gt;';
-    }
-    if (c === '&') {
-      return '&amp;';
-    }
-    return '&quot;';
-  });
-}
-
-function buildKernelTooltipHtml(
+function buildKernelTooltipText(
   displayName: string,
   info: IKernelInfoForTooltip
 ): string {
@@ -549,39 +536,24 @@ function buildKernelTooltipHtml(
   } else {
     kind = 'System kernelspec';
   }
-  const row = (label: string, value: string | null | undefined): string => {
-    if (!value) {
-      return '';
-    }
-    return (
-      '<tr>' +
-      '<td style="padding-right:10px;color:var(--jp-content-font-color2,#666);vertical-align:top;white-space:nowrap">' +
-      escapeHtml(label) +
-      '</td>' +
-      '<td><code style="font-family:var(--jp-code-font-family,monospace);font-size:11.5px">' +
-      escapeHtml(value) +
-      '</code></td>' +
-      '</tr>'
-    );
-  };
-  return (
-    '<div style="font-weight:600;font-size:13px;margin-bottom:6px;' +
-    'border-bottom:1px solid var(--jp-border-color2,#eee);padding-bottom:4px">' +
-    escapeHtml(displayName) +
-    '</div>' +
-    '<table style="border-collapse:collapse">' +
-    row('Kernel name', info.kernel_name) +
-    row('Kind', kind) +
-    row('Executable', info.executable_path) +
-    row('Resource dir', info.resource_dir) +
-    row('Env path', info.env_path) +
-    '</table>'
-  );
+  const lines: string[] = [displayName, ''];
+  lines.push(`Kernel name:   ${info.kernel_name}`);
+  lines.push(`Kind:          ${kind}`);
+  if (info.executable_path) {
+    lines.push(`Executable:    ${info.executable_path}`);
+  }
+  if (info.resource_dir) {
+    lines.push(`Resource dir:  ${info.resource_dir}`);
+  }
+  if (info.env_path) {
+    lines.push(`Env path:      ${info.env_path}`);
+  }
+  return lines.join('\n');
 }
 
-describe('buildKernelTooltipHtml (hover tooltip)', () => {
-  it('renders all fields for a local kernelspec', () => {
-    const html = buildKernelTooltipHtml('dbm-ds', {
+describe('buildKernelTooltipText (native hover tooltip)', () => {
+  it('renders all fields on separate lines for a local kernelspec', () => {
+    const text = buildKernelTooltipText('dbm-ds', {
       kernel_name: 'dbm-ds',
       executable_path: '/home/u/proj/.venv/bin/python',
       resource_dir: '/home/u/.local/share/jupyter/kernels/dbm-ds',
@@ -589,19 +561,18 @@ describe('buildKernelTooltipHtml (hover tooltip)', () => {
       is_global_conda: false,
       is_local: true
     });
-    expect(html).toContain('dbm-ds');
-    expect(html).toContain('Local kernelspec');
-    expect(html).toContain('/home/u/proj/.venv/bin/python');
-    expect(html).toContain('/home/u/.local/share/jupyter/kernels/dbm-ds');
-    expect(html).toContain('/home/u/proj');
-    expect(html).toContain('Kernel name');
-    expect(html).toContain('Executable');
-    expect(html).toContain('Resource dir');
-    expect(html).toContain('Env path');
+    // first line is the display name, second line blank, then field rows
+    expect(text.split('\n')[0]).toBe('dbm-ds');
+    expect(text.split('\n')[1]).toBe('');
+    expect(text).toContain('Local kernelspec');
+    expect(text).toContain('Kernel name:');
+    expect(text).toContain('/home/u/proj/.venv/bin/python');
+    expect(text).toContain('/home/u/.local/share/jupyter/kernels/dbm-ds');
+    expect(text).toContain('/home/u/proj');
   });
 
   it('shows "Global conda environment" when is_global_conda', () => {
-    const html = buildKernelTooltipHtml('Python [conda env:base] *', {
+    const text = buildKernelTooltipText('Python [conda env:base] *', {
       kernel_name: 'conda-base-py',
       executable_path: '/opt/conda/bin/python',
       resource_dir: '/opt/conda/share/jupyter/kernels/python3',
@@ -609,13 +580,13 @@ describe('buildKernelTooltipHtml (hover tooltip)', () => {
       is_global_conda: true,
       is_local: false
     });
-    expect(html).toContain('Global conda environment');
-    expect(html).not.toContain('System kernelspec');
-    expect(html).not.toContain('Local kernelspec');
+    expect(text).toContain('Global conda environment');
+    expect(text).not.toContain('System kernelspec');
+    expect(text).not.toContain('Local kernelspec');
   });
 
   it('shows "System kernelspec" when neither local nor global conda', () => {
-    const html = buildKernelTooltipHtml('Some System Kernel', {
+    const text = buildKernelTooltipText('Some System Kernel', {
       kernel_name: 'sys-kernel',
       executable_path: '/usr/local/share/python/bin/python',
       resource_dir: '/usr/local/share/jupyter/kernels/sys-kernel',
@@ -623,13 +594,13 @@ describe('buildKernelTooltipHtml (hover tooltip)', () => {
       is_global_conda: false,
       is_local: false
     });
-    expect(html).toContain('System kernelspec');
-    expect(html).not.toContain('Global conda environment');
-    expect(html).not.toContain('Local kernelspec');
+    expect(text).toContain('System kernelspec');
+    expect(text).not.toContain('Global conda environment');
+    expect(text).not.toContain('Local kernelspec');
   });
 
   it('skips rows whose value is null or empty (no Env path row)', () => {
-    const html = buildKernelTooltipHtml('no-env-kernel', {
+    const text = buildKernelTooltipText('no-env-kernel', {
       kernel_name: 'no-env-kernel',
       executable_path: '/some/path/python',
       resource_dir: '/some/spec/dir',
@@ -637,24 +608,23 @@ describe('buildKernelTooltipHtml (hover tooltip)', () => {
       is_global_conda: false,
       is_local: true
     });
-    expect(html).not.toContain('Env path');
-    expect(html).toContain('Kernel name');
-    expect(html).toContain('Executable');
+    expect(text).not.toContain('Env path');
+    expect(text).toContain('Kernel name:');
+    expect(text).toContain('Executable:');
   });
 
-  it('escapes HTML special characters in the display name', () => {
-    const html = buildKernelTooltipHtml('Python <evil> & "stuff"', {
-      kernel_name: 'k',
-      executable_path: '/x',
-      resource_dir: '/y',
-      env_path: null,
+  it('uses newline separators (browser title attribute honors \\n)', () => {
+    const text = buildKernelTooltipText('Python [uv env:cp-kpi]', {
+      kernel_name: 'venv-cp-kpi-py',
+      executable_path: '/p/.venv/bin/python',
+      resource_dir: '/p/.venv/share/jupyter/kernels/python3',
+      env_path: '/p',
       is_global_conda: false,
       is_local: true
     });
-    expect(html).not.toContain('<evil>');
-    expect(html).toContain('&lt;evil&gt;');
-    expect(html).toContain('&amp;');
-    expect(html).toContain('&quot;stuff&quot;');
+    const lines = text.split('\n');
+    expect(lines.length).toBeGreaterThanOrEqual(5);
+    expect(lines[0]).toBe('Python [uv env:cp-kpi]');
   });
 });
 

@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="29" failures="0" errors="0" time="2.74">
-  <testsuite name="kernel card enrichment" errors="0" failures="0" skipped="0" timestamp="2026-06-09T12:19:47" time="2.249" tests="29">
-    <testcase classname="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" name="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" time="0.006">
+<testsuites name="jest tests" tests="29" failures="0" errors="0" time="4.093">
+  <testsuite name="kernel card enrichment" errors="0" failures="0" skipped="0" timestamp="2026-06-09T16:11:42" time="3.01" tests="29">
+    <testcase classname="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" name="kernel card enrichment stamps the descriptor on a kernel card using the icon alt text" time="0.042">
     </testcase>
     <testcase classname="kernel card enrichment falls back to the label text when the icon has no alt" name="kernel card enrichment falls back to the label text when the icon has no alt" time="0.001">
     </testcase>
     <testcase classname="kernel card enrichment does not stamp a non-kernel card (no jp-Launcher-kernelIcon)" name="kernel card enrichment does not stamp a non-kernel card (no jp-Launcher-kernelIcon)" time="0.003">
     </testcase>
-    <testcase classname="kernel card enrichment is idempotent and preserves the first stamped value" name="kernel card enrichment is idempotent and preserves the first stamped value" time="0.001">
+    <testcase classname="kernel card enrichment is idempotent and preserves the first stamped value" name="kernel card enrichment is idempotent and preserves the first stamped value" time="0.002">
     </testcase>
     <testcase classname="kernel card enrichment stamped kernel cards match the context menu selector; others do not" name="kernel card enrichment stamped kernel cards match the context menu selector; others do not" time="0.002">
     </testcase>
-    <testcase classname="findVenvEnvironment matching selects correct env by executable path when names overlap" name="findVenvEnvironment matching selects correct env by executable path when names overlap" time="0">
+    <testcase classname="findVenvEnvironment matching selects correct env by executable path when names overlap" name="findVenvEnvironment matching selects correct env by executable path when names overlap" time="0.001">
     </testcase>
     <testcase classname="findVenvEnvironment matching selects shorter-named env by executable path" name="findVenvEnvironment matching selects shorter-named env by executable path" time="0">
     </testcase>
-    <testcase classname="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" name="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" time="0">
+    <testcase classname="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" name="findVenvEnvironment matching rejects path that is a sibling, not a child, of env.path" time="0.001">
     </testcase>
     <testcase classname="findVenvEnvironment matching falls back to longest-name substring match when path missing" name="findVenvEnvironment matching falls back to longest-name substring match when path missing" time="0">
     </testcase>
-    <testcase classname="findVenvEnvironment matching matches custom_name in fallback path" name="findVenvEnvironment matching matches custom_name in fallback path" time="0">
+    <testcase classname="findVenvEnvironment matching matches custom_name in fallback path" name="findVenvEnvironment matching matches custom_name in fallback path" time="0.001">
     </testcase>
     <testcase classname="findVenvEnvironment matching skips conda envs in path-based matching" name="findVenvEnvironment matching skips conda envs in path-based matching" time="0">
     </testcase>
@@ -35,17 +35,17 @@
     </testcase>
     <testcase classname="findVenvEnvironment matching falls back to substring when env paths are relative and workspace_root is missing" name="findVenvEnvironment matching falls back to substring when env paths are relative and workspace_root is missing" time="0">
     </testcase>
-    <testcase classname="buildKernelTooltipHtml (hover tooltip) renders all fields for a local kernelspec" name="buildKernelTooltipHtml (hover tooltip) renders all fields for a local kernelspec" time="0">
+    <testcase classname="buildKernelTooltipText (native hover tooltip) renders all fields on separate lines for a local kernelspec" name="buildKernelTooltipText (native hover tooltip) renders all fields on separate lines for a local kernelspec" time="0.001">
     </testcase>
-    <testcase classname="buildKernelTooltipHtml (hover tooltip) shows &quot;Global conda environment&quot; when is_global_conda" name="buildKernelTooltipHtml (hover tooltip) shows &quot;Global conda environment&quot; when is_global_conda" time="0.001">
+    <testcase classname="buildKernelTooltipText (native hover tooltip) shows &quot;Global conda environment&quot; when is_global_conda" name="buildKernelTooltipText (native hover tooltip) shows &quot;Global conda environment&quot; when is_global_conda" time="0">
     </testcase>
-    <testcase classname="buildKernelTooltipHtml (hover tooltip) shows &quot;System kernelspec&quot; when neither local nor global conda" name="buildKernelTooltipHtml (hover tooltip) shows &quot;System kernelspec&quot; when neither local nor global conda" time="0">
+    <testcase classname="buildKernelTooltipText (native hover tooltip) shows &quot;System kernelspec&quot; when neither local nor global conda" name="buildKernelTooltipText (native hover tooltip) shows &quot;System kernelspec&quot; when neither local nor global conda" time="0">
     </testcase>
-    <testcase classname="buildKernelTooltipHtml (hover tooltip) skips rows whose value is null or empty (no Env path row)" name="buildKernelTooltipHtml (hover tooltip) skips rows whose value is null or empty (no Env path row)" time="0">
+    <testcase classname="buildKernelTooltipText (native hover tooltip) skips rows whose value is null or empty (no Env path row)" name="buildKernelTooltipText (native hover tooltip) skips rows whose value is null or empty (no Env path row)" time="0.001">
     </testcase>
-    <testcase classname="buildKernelTooltipHtml (hover tooltip) escapes HTML special characters in the display name" name="buildKernelTooltipHtml (hover tooltip) escapes HTML special characters in the display name" time="0">
+    <testcase classname="buildKernelTooltipText (native hover tooltip) uses newline separators (browser title attribute honors \n)" name="buildKernelTooltipText (native hover tooltip) uses newline separators (browser title attribute honors \n)" time="0">
     </testcase>
-    <testcase classname="venvDirFromExecutable (standalone remove path) extracts .venv root for standard layout" name="venvDirFromExecutable (standalone remove path) extracts .venv root for standard layout" time="0.001">
+    <testcase classname="venvDirFromExecutable (standalone remove path) extracts .venv root for standard layout" name="venvDirFromExecutable (standalone remove path) extracts .venv root for standard layout" time="0">
     </testcase>
     <testcase classname="venvDirFromExecutable (standalone remove path) handles other binary names under bin/" name="venvDirFromExecutable (standalone remove path) handles other binary names under bin/" time="0">
     </testcase>
@@ -53,11 +53,11 @@
     </testcase>
     <testcase classname="venvDirFromExecutable (standalone remove path) returns null for empty / undefined / relative paths" name="venvDirFromExecutable (standalone remove path) returns null for empty / undefined / relative paths" time="0">
     </testcase>
-    <testcase classname="context menu configuration should define all expected context menu commands" name="context menu configuration should define all expected context menu commands" time="0.001">
+    <testcase classname="context menu configuration should define all expected context menu commands" name="context menu configuration should define all expected context menu commands" time="0">
     </testcase>
     <testcase classname="context menu configuration should target only kernel launcher cards (descriptor selector)" name="context menu configuration should target only kernel launcher cards (descriptor selector)" time="0">
     </testcase>
-    <testcase classname="context menu configuration should have correct menu item order by rank" name="context menu configuration should have correct menu item order by rank" time="0">
+    <testcase classname="context menu configuration should have correct menu item order by rank" name="context menu configuration should have correct menu item order by rank" time="0.001">
     </testcase>
   </testsuite>
 </testsuites>
