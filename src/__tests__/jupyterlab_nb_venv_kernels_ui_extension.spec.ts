@@ -194,9 +194,15 @@ function findVenvEnvironmentMatch(
   environments: IVenvEnvironment[],
   displayName: string,
   executablePath?: string | null,
-  workspaceRoot?: string
+  workspaceRoot?: string,
+  resourceDir?: string | null
 ): IVenvEnvironment | null {
-  if (executablePath && executablePath.startsWith('/')) {
+  if (
+    executablePath &&
+    executablePath.startsWith('/') &&
+    resourceDir &&
+    resourceDir.startsWith('/')
+  ) {
     let attemptedPathMatch = false;
     for (const env of environments) {
       if (env.type === 'conda') {
@@ -207,7 +213,8 @@ function findVenvEnvironmentMatch(
         continue;
       }
       attemptedPathMatch = true;
-      if (executablePath.startsWith(envAbs + '/')) {
+      const prefix = envAbs + '/';
+      if (executablePath.startsWith(prefix) && resourceDir.startsWith(prefix)) {
         return env;
       }
     }
@@ -270,7 +277,9 @@ describe('findVenvEnvironment matching', () => {
     const match = findVenvEnvironmentMatch(
       collidingEnvs,
       'Python [uv env:demo-prod]',
-      '/work/demo-prod/.venv/bin/python'
+      '/work/demo-prod/.venv/bin/python',
+      undefined,
+      '/work/demo-prod/.venv/share/jupyter/kernels/python3'
     );
     expect(match?.name).toBe('demo-prod');
   });
@@ -279,7 +288,9 @@ describe('findVenvEnvironment matching', () => {
     const match = findVenvEnvironmentMatch(
       collidingEnvs,
       'Python [uv env:demo]',
-      '/work/demo/.venv/bin/python'
+      '/work/demo/.venv/bin/python',
+      undefined,
+      '/work/demo/.venv/share/jupyter/kernels/python3'
     );
     expect(match?.name).toBe('demo');
   });
@@ -299,7 +310,9 @@ describe('findVenvEnvironment matching', () => {
     const match = findVenvEnvironmentMatch(
       envs,
       'Python [uv env:demo]',
-      '/work/demo/.venv-backup/bin/python'
+      '/work/demo/.venv-backup/bin/python',
+      undefined,
+      '/work/demo/.venv-backup/share/jupyter/kernels/python3'
     );
     expect(match).toBeNull();
   });
@@ -348,7 +361,9 @@ describe('findVenvEnvironment matching', () => {
     const match = findVenvEnvironmentMatch(
       envs,
       'Python [conda env:demo]',
-      '/opt/conda/envs/demo/bin/python'
+      '/opt/conda/envs/demo/bin/python',
+      undefined,
+      '/opt/conda/envs/demo/share/jupyter/kernels/python3'
     );
     expect(match).toBeNull();
   });
@@ -381,7 +396,8 @@ describe('findVenvEnvironment matching', () => {
       envs,
       'Python [uv env:cp-kpi]',
       '/home/lab/workspace/delaval/cp/graph-engine/datascience/.venv/bin/python',
-      '/home/lab/workspace'
+      '/home/lab/workspace',
+      '/home/lab/workspace/delaval/cp/graph-engine/datascience/.venv/share/jupyter/kernels/python3'
     );
     expect(match?.name).toBe('cp-kpi');
   });
@@ -409,9 +425,58 @@ describe('findVenvEnvironment matching', () => {
       envs,
       'Python [uv env:demo-prod]',
       '/home/lab/workspace/projects/demo-prod/.venv/bin/python',
-      '/home/lab/workspace'
+      '/home/lab/workspace',
+      '/home/lab/workspace/projects/demo-prod/.venv/share/jupyter/kernels/python3'
     );
     expect(match?.name).toBe('demo-prod');
+  });
+
+  // Regression v1.2.28: standalone kernelspec whose argv[0] happens to
+  // point at an nb_venv_kernels-managed env's python must NOT resolve to
+  // that env - otherwise Remove would unregister + delete the shared
+  // .venv when the user only wanted to drop the standalone kernel.
+  it('does not match when resource_dir is outside the env (standalone kernelspec)', () => {
+    const envs: IVenvEnvironment[] = [
+      {
+        name: 'dbm-improvements',
+        custom_name: 'dbm-improvements',
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'delaval/cp/ai-assistant/datascience/.venv'
+      }
+    ];
+    const match = findVenvEnvironmentMatch(
+      envs,
+      'dbm-ds',
+      // executable_path is inside the dbm-improvements env...
+      '/home/lab/workspace/delaval/cp/ai-assistant/datascience/.venv/bin/python',
+      '/home/lab/workspace',
+      // ...but resource_dir is in the user's local kernelspec dir
+      '/home/lab/.local/share/jupyter/kernels/dbm-ds'
+    );
+    expect(match).toBeNull();
+  });
+
+  it('does match an nb_venv_kernels dynamic kernel (resource_dir inside env)', () => {
+    const envs: IVenvEnvironment[] = [
+      {
+        name: 'dbm-improvements',
+        custom_name: 'dbm-improvements',
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'delaval/cp/ai-assistant/datascience/.venv'
+      }
+    ];
+    const match = findVenvEnvironmentMatch(
+      envs,
+      'Python [uv env:dbm-improvements]',
+      '/home/lab/workspace/delaval/cp/ai-assistant/datascience/.venv/bin/python',
+      '/home/lab/workspace',
+      '/home/lab/workspace/delaval/cp/ai-assistant/datascience/.venv/share/jupyter/kernels/python3'
+    );
+    expect(match?.name).toBe('dbm-improvements');
   });
 
   it('falls back to substring when env paths are relative and workspace_root is missing', () => {
@@ -446,6 +511,152 @@ function venvDirFromExecutable(exe: string | null | undefined): string | null {
   const m = exe.match(/^(.*\/\.venv)\/bin\/[^/]+$/);
   return m ? m[1] : null;
 }
+
+// Mirror of buildKernelTooltipHtml and escapeHtml from src/index.ts.
+interface IKernelInfoForTooltip {
+  kernel_name: string;
+  executable_path: string | null;
+  resource_dir: string;
+  env_path: string | null;
+  is_global_conda: boolean;
+  is_local: boolean;
+}
+
+function escapeHtml(s: string | null | undefined): string {
+  return (s || '').replace(/[<>&"]/g, c => {
+    if (c === '<') {
+      return '&lt;';
+    }
+    if (c === '>') {
+      return '&gt;';
+    }
+    if (c === '&') {
+      return '&amp;';
+    }
+    return '&quot;';
+  });
+}
+
+function buildKernelTooltipHtml(
+  displayName: string,
+  info: IKernelInfoForTooltip
+): string {
+  let kind: string;
+  if (info.is_global_conda) {
+    kind = 'Global conda environment';
+  } else if (info.is_local) {
+    kind = 'Local kernelspec';
+  } else {
+    kind = 'System kernelspec';
+  }
+  const row = (label: string, value: string | null | undefined): string => {
+    if (!value) {
+      return '';
+    }
+    return (
+      '<tr>' +
+      '<td style="padding-right:10px;color:var(--jp-content-font-color2,#666);vertical-align:top;white-space:nowrap">' +
+      escapeHtml(label) +
+      '</td>' +
+      '<td><code style="font-family:var(--jp-code-font-family,monospace);font-size:11.5px">' +
+      escapeHtml(value) +
+      '</code></td>' +
+      '</tr>'
+    );
+  };
+  return (
+    '<div style="font-weight:600;font-size:13px;margin-bottom:6px;' +
+    'border-bottom:1px solid var(--jp-border-color2,#eee);padding-bottom:4px">' +
+    escapeHtml(displayName) +
+    '</div>' +
+    '<table style="border-collapse:collapse">' +
+    row('Kernel name', info.kernel_name) +
+    row('Kind', kind) +
+    row('Executable', info.executable_path) +
+    row('Resource dir', info.resource_dir) +
+    row('Env path', info.env_path) +
+    '</table>'
+  );
+}
+
+describe('buildKernelTooltipHtml (hover tooltip)', () => {
+  it('renders all fields for a local kernelspec', () => {
+    const html = buildKernelTooltipHtml('dbm-ds', {
+      kernel_name: 'dbm-ds',
+      executable_path: '/home/u/proj/.venv/bin/python',
+      resource_dir: '/home/u/.local/share/jupyter/kernels/dbm-ds',
+      env_path: '/home/u/proj',
+      is_global_conda: false,
+      is_local: true
+    });
+    expect(html).toContain('dbm-ds');
+    expect(html).toContain('Local kernelspec');
+    expect(html).toContain('/home/u/proj/.venv/bin/python');
+    expect(html).toContain('/home/u/.local/share/jupyter/kernels/dbm-ds');
+    expect(html).toContain('/home/u/proj');
+    expect(html).toContain('Kernel name');
+    expect(html).toContain('Executable');
+    expect(html).toContain('Resource dir');
+    expect(html).toContain('Env path');
+  });
+
+  it('shows "Global conda environment" when is_global_conda', () => {
+    const html = buildKernelTooltipHtml('Python [conda env:base] *', {
+      kernel_name: 'conda-base-py',
+      executable_path: '/opt/conda/bin/python',
+      resource_dir: '/opt/conda/share/jupyter/kernels/python3',
+      env_path: '/opt/conda',
+      is_global_conda: true,
+      is_local: false
+    });
+    expect(html).toContain('Global conda environment');
+    expect(html).not.toContain('System kernelspec');
+    expect(html).not.toContain('Local kernelspec');
+  });
+
+  it('shows "System kernelspec" when neither local nor global conda', () => {
+    const html = buildKernelTooltipHtml('Some System Kernel', {
+      kernel_name: 'sys-kernel',
+      executable_path: '/usr/local/share/python/bin/python',
+      resource_dir: '/usr/local/share/jupyter/kernels/sys-kernel',
+      env_path: null,
+      is_global_conda: false,
+      is_local: false
+    });
+    expect(html).toContain('System kernelspec');
+    expect(html).not.toContain('Global conda environment');
+    expect(html).not.toContain('Local kernelspec');
+  });
+
+  it('skips rows whose value is null or empty (no Env path row)', () => {
+    const html = buildKernelTooltipHtml('no-env-kernel', {
+      kernel_name: 'no-env-kernel',
+      executable_path: '/some/path/python',
+      resource_dir: '/some/spec/dir',
+      env_path: null,
+      is_global_conda: false,
+      is_local: true
+    });
+    expect(html).not.toContain('Env path');
+    expect(html).toContain('Kernel name');
+    expect(html).toContain('Executable');
+  });
+
+  it('escapes HTML special characters in the display name', () => {
+    const html = buildKernelTooltipHtml('Python <evil> & "stuff"', {
+      kernel_name: 'k',
+      executable_path: '/x',
+      resource_dir: '/y',
+      env_path: null,
+      is_global_conda: false,
+      is_local: true
+    });
+    expect(html).not.toContain('<evil>');
+    expect(html).toContain('&lt;evil&gt;');
+    expect(html).toContain('&amp;');
+    expect(html).toContain('&quot;stuff&quot;');
+  });
+});
 
 describe('venvDirFromExecutable (standalone remove path)', () => {
   it('extracts .venv root for standard layout', () => {

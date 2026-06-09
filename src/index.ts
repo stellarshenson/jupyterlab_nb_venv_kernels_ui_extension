@@ -240,36 +240,49 @@ function absoluteEnvPath(
 /**
  * Find a venv environment matching the given display name.
  *
- * When `executablePath` is provided as an absolute path, performs
- * deterministic path-based matching: the environment whose (resolved,
- * absolute) `path` is a prefix of the kernel's Python executable wins. This
- * avoids the substring-collision class of bug where two envs share a name
- * prefix (e.g. `demo` vs `demo-prod`).
+ * Deterministic path-based matching: a kernel "belongs to" an env only if
+ * BOTH its `executable_path` AND its `resource_dir` are under the env's
+ * absolute path. The first prefix alone is not enough - a standalone
+ * kernelspec (installed via `ipython kernel install`) whose `argv[0]` just
+ * happens to point at another env's `.venv/bin/python` lives in
+ * `~/.local/share/jupyter/kernels/<name>/`, not inside the env tree, so it
+ * must NOT be resolved to that env (otherwise Remove Environment would
+ * delete the shared .venv when the user only wanted to drop the
+ * standalone kernel). nb_venv_kernels' synthesized dynamic kernels have
+ * their `resource_dir` under the env (typically
+ * `<env_path>/share/jupyter/kernels/...`), so they pass both checks.
  *
- * Falls back to substring matching on env names when no executable path is
+ * Falls back to substring matching on env names when neither path is
  * available, or when none of the env paths could be resolved to absolute
  * (old nb_venv_kernels without `workspace_root`).
  *
  * @param displayName - The kernel display name (used for fallback match)
  * @param executablePath - The kernel's `argv[0]` python path, if known
+ * @param resourceDir - The kernelspec's `resource_dir`, if known
  * @returns The matching environment or null
  */
 async function findVenvEnvironment(
   displayName: string,
-  executablePath?: string | null
+  executablePath?: string | null,
+  resourceDir?: string | null
 ): Promise<IVenvEnvironment | null> {
   const envData = await fetchVenvEnvironments();
   if (!envData) {
     return null;
   }
 
-  // Path-based match (preferred) - exact prefix on the env's absolute path
-  // eliminates ambiguity between envs with overlapping names. If we have an
-  // absolute executable path AND at least one env path resolved, we trust
-  // the result: a non-match is then definitive (kernel not registered with
-  // nb_venv_kernels), so we do NOT fall back to substring matching - that
-  // would re-introduce the very collision bug this function prevents.
-  if (executablePath && executablePath.startsWith('/')) {
+  // Path-based match (preferred) - both prefixes must be under the env's
+  // absolute path. If we have absolute paths AND at least one env path
+  // resolved, we trust the result: a non-match is then definitive (kernel
+  // not registered with nb_venv_kernels), so we do NOT fall back to
+  // substring matching - that would re-introduce the very collision bug
+  // this function prevents.
+  if (
+    executablePath &&
+    executablePath.startsWith('/') &&
+    resourceDir &&
+    resourceDir.startsWith('/')
+  ) {
     let attemptedPathMatch = false;
     for (const env of envData.environments) {
       if (env.type === 'conda') {
@@ -280,7 +293,8 @@ async function findVenvEnvironment(
         continue;
       }
       attemptedPathMatch = true;
-      if (executablePath.startsWith(envAbs + '/')) {
+      const prefix = envAbs + '/';
+      if (executablePath.startsWith(prefix) && resourceDir.startsWith(prefix)) {
         return env;
       }
     }
@@ -699,6 +713,261 @@ function clickedKernelDisplayName(app: JupyterFrontEnd): string | null {
 }
 
 /**
+ * Cache of kernel-path responses keyed by display name, populated lazily by
+ * the hover tooltip on first hover per kernel.
+ */
+const kernelInfoCache = new Map<string, IKernelPathResponse>();
+
+/**
+ * The singleton hover-tooltip element (lazily created), and a monotonic
+ * token used to cancel in-flight show requests when the user moves on.
+ */
+let tooltipEl: HTMLDivElement | null = null;
+let tooltipShowToken = 0;
+let tooltipShowTimer: number | null = null;
+
+/**
+ * Escape a string for safe HTML interpolation in the tooltip body.
+ *
+ * Kernel display names / paths come from kernelspec metadata which is
+ * effectively user-controlled, so any HTML special characters must be
+ * encoded to prevent injection into the tooltip markup.
+ */
+function escapeHtml(s: string | null | undefined): string {
+  return (s || '').replace(/[<>&"]/g, c => {
+    if (c === '<') {
+      return '&lt;';
+    }
+    if (c === '>') {
+      return '&gt;';
+    }
+    if (c === '&') {
+      return '&amp;';
+    }
+    return '&quot;';
+  });
+}
+
+/**
+ * Lazily create and return the singleton tooltip element appended to body.
+ *
+ * Styled with JupyterLab CSS variables so it tracks the active theme.
+ */
+function ensureTooltipElement(): HTMLDivElement {
+  if (tooltipEl) {
+    return tooltipEl;
+  }
+  const el = document.createElement('div');
+  el.className = 'jp-NbVenvKernels-Tooltip';
+  el.setAttribute('role', 'tooltip');
+  Object.assign(el.style, {
+    position: 'fixed',
+    zIndex: '10000',
+    maxWidth: '560px',
+    padding: '10px 12px',
+    background: 'var(--jp-layout-color1, #fff)',
+    color: 'var(--jp-content-font-color1, #000)',
+    border: '1px solid var(--jp-border-color1, #ccc)',
+    borderRadius: '4px',
+    boxShadow: '0 4px 14px rgba(0, 0, 0, 0.18)',
+    fontSize: '12px',
+    lineHeight: '1.4',
+    pointerEvents: 'none',
+    display: 'none',
+    wordBreak: 'break-all'
+  });
+  document.body.appendChild(el);
+  tooltipEl = el;
+  return el;
+}
+
+/**
+ * Build the tooltip body HTML for a kernel.
+ *
+ * Sections: display name (header), then a table of fields: kernel name,
+ * kind (local kernelspec / global conda environment / system kernelspec),
+ * executable, resource dir, env path.
+ */
+function buildKernelTooltipHtml(
+  displayName: string,
+  info: IKernelPathResponse
+): string {
+  let kind: string;
+  if (info.is_global_conda) {
+    kind = 'Global conda environment';
+  } else if (info.is_local) {
+    kind = 'Local kernelspec';
+  } else {
+    kind = 'System kernelspec';
+  }
+  const row = (label: string, value: string | null | undefined): string => {
+    if (!value) {
+      return '';
+    }
+    return (
+      '<tr>' +
+      '<td style="padding-right:10px;color:var(--jp-content-font-color2,#666);vertical-align:top;white-space:nowrap">' +
+      escapeHtml(label) +
+      '</td>' +
+      '<td><code style="font-family:var(--jp-code-font-family,monospace);font-size:11.5px">' +
+      escapeHtml(value) +
+      '</code></td>' +
+      '</tr>'
+    );
+  };
+  return (
+    '<div style="font-weight:600;font-size:13px;margin-bottom:6px;' +
+    'border-bottom:1px solid var(--jp-border-color2,#eee);padding-bottom:4px">' +
+    escapeHtml(displayName) +
+    '</div>' +
+    '<table style="border-collapse:collapse">' +
+    row('Kernel name', info.kernel_name) +
+    row('Kind', kind) +
+    row('Executable', info.executable_path) +
+    row('Resource dir', info.resource_dir) +
+    row('Env path', info.env_path) +
+    '</table>'
+  );
+}
+
+/**
+ * Position the tooltip relative to a launcher card.
+ *
+ * Default placement: to the right of the card, top-aligned. Flips to the
+ * left if it would overflow the viewport, and slides up if the bottom
+ * would overflow.
+ */
+function positionTooltipNearCard(card: HTMLElement): void {
+  const el = tooltipEl;
+  if (!el) {
+    return;
+  }
+  const cardRect = card.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  el.style.left = `${cardRect.right + 8}px`;
+  el.style.top = `${cardRect.top}px`;
+  const tipRect = el.getBoundingClientRect();
+  if (tipRect.right > vw - 8) {
+    el.style.left = `${Math.max(8, cardRect.left - tipRect.width - 8)}px`;
+  }
+  if (tipRect.bottom > vh - 8) {
+    el.style.top = `${Math.max(8, vh - tipRect.height - 8)}px`;
+  }
+}
+
+/**
+ * Show the rich tooltip for the given launcher card.
+ *
+ * First hover per kernel triggers a `fetchKernelPath` call; subsequent
+ * hovers read from `kernelInfoCache`. A race-safe token guards against
+ * the user moving on while the fetch is in flight.
+ */
+async function showKernelTooltip(card: HTMLElement): Promise<void> {
+  const displayName = card.getAttribute(KERNEL_CARD_ATTR);
+  if (!displayName) {
+    return;
+  }
+  const token = ++tooltipShowToken;
+  const el = ensureTooltipElement();
+  el.innerHTML =
+    '<div style="font-weight:600;font-size:13px">' +
+    escapeHtml(displayName) +
+    '</div>' +
+    '<div style="color:var(--jp-content-font-color2,#666);font-size:11px;margin-top:4px">Loading…</div>';
+  el.style.display = 'block';
+  positionTooltipNearCard(card);
+
+  let info = kernelInfoCache.get(displayName) || null;
+  if (!info) {
+    const fetched = await fetchKernelPath(displayName);
+    if (token !== tooltipShowToken) {
+      return;
+    }
+    if (fetched) {
+      kernelInfoCache.set(displayName, fetched);
+      info = fetched;
+    }
+  }
+  if (token !== tooltipShowToken) {
+    return;
+  }
+  if (info) {
+    el.innerHTML = buildKernelTooltipHtml(displayName, info);
+    positionTooltipNearCard(card);
+  } else {
+    el.innerHTML =
+      '<div style="font-weight:600;font-size:13px">' +
+      escapeHtml(displayName) +
+      '</div>' +
+      '<div style="color:var(--jp-warn-color-normal,#c33);font-size:11px;margin-top:4px">Could not fetch kernel info.</div>';
+  }
+}
+
+/**
+ * Hide the tooltip and invalidate any pending show.
+ */
+function hideKernelTooltip(): void {
+  tooltipShowToken++;
+  if (tooltipShowTimer !== null) {
+    window.clearTimeout(tooltipShowTimer);
+    tooltipShowTimer = null;
+  }
+  if (tooltipEl) {
+    tooltipEl.style.display = 'none';
+  }
+}
+
+/**
+ * Install delegated `mouseover` / `mouseout` listeners on the shell node
+ * that show / hide the rich hover tooltip for stamped kernel cards.
+ *
+ * @param shellNode - The application shell DOM node to delegate from
+ */
+function setupKernelTooltips(shellNode: HTMLElement): void {
+  const SELECTOR = `.jp-LauncherCard[${KERNEL_CARD_ATTR}]`;
+  shellNode.addEventListener('mouseover', event => {
+    const target = event.target as HTMLElement | null;
+    if (!target) {
+      return;
+    }
+    const card = target.closest(SELECTOR) as HTMLElement | null;
+    if (!card) {
+      return;
+    }
+    // Moving within the same card - do nothing
+    const related = event.relatedTarget as HTMLElement | null;
+    if (related && card.contains(related)) {
+      return;
+    }
+    if (tooltipShowTimer !== null) {
+      window.clearTimeout(tooltipShowTimer);
+    }
+    tooltipShowTimer = window.setTimeout(() => {
+      tooltipShowTimer = null;
+      showKernelTooltip(card).catch(err =>
+        console.debug('Tooltip show failed:', err)
+      );
+    }, 250);
+  });
+  shellNode.addEventListener('mouseout', event => {
+    const target = event.target as HTMLElement | null;
+    if (!target) {
+      return;
+    }
+    const card = target.closest(SELECTOR) as HTMLElement | null;
+    if (!card) {
+      return;
+    }
+    const related = event.relatedTarget as HTMLElement | null;
+    if (related && card.contains(related)) {
+      return;
+    }
+    hideKernelTooltip();
+  });
+}
+
+/**
  * Initialization data for the jupyterlab_nb_venv_kernels_ui_extension extension.
  */
 const plugin: JupyterFrontEndPlugin<void> = {
@@ -728,6 +997,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
     // `.jp-LauncherCard[data-jp-kernel-display-name]`) only ever appears on
     // kernel cards - never on Terminal, Text File, service, or other cards.
     observeLauncherCards(app.shell.node);
+
+    // Install rich hover-tooltip on stamped kernel cards. Lazy fetch of
+    // kernel-path info on first hover per kernel, cached afterwards.
+    setupKernelTooltips(app.shell.node);
 
     // Check if nb_venv_kernels is available (for unregister feature)
     checkNbVenvKernelsAvailable().then(available => {
@@ -901,7 +1174,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
           kernelInfo = await fetchKernelPath(displayName);
           env = await findVenvEnvironment(
             displayName,
-            kernelInfo?.executable_path
+            kernelInfo?.executable_path,
+            kernelInfo?.resource_dir
           );
         } finally {
           resolveDialog.dispose();
@@ -1033,7 +1307,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
           kernelInfo = await fetchKernelPath(displayName);
           env = await findVenvEnvironment(
             displayName,
-            kernelInfo?.executable_path
+            kernelInfo?.executable_path,
+            kernelInfo?.resource_dir
           );
         } finally {
           resolveDialog.dispose();
