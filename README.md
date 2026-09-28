@@ -37,6 +37,8 @@ Context menu extension for kernel launcher cards. Right-click on any kernel to n
 
 - **Project-aware navigation** - For `.venv` environments, navigates to project root (one level up from `.venv`)
 - **Dynamic kernel support** - Works with `nb_conda_kernels` and `nb_venv_kernels` providers
+- **Kernel details on hover** - The card's tooltip shows kernel name, kind, executable, resource directory and environment path
+- **Shared display names refused** - When kernels in different directories share one display name, every menu action refuses and names the colliding kernels
 
 ## Requirements
 

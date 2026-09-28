@@ -2,6 +2,27 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.2.31] - 2026-09-28
+
+### Added
+
+- Galata browser test suite (29 tests) run in CI on a scratch home directory
+
+### Changed
+
+- Kernel card details (kernel name, kind, executable, resource directory, environment path) show in the browser's standard hover tooltip instead of a custom popup
+- Resolve-failure dialogs show the server's reason; for a display name shared by kernels in different directories they name both kernels
+
+### Fixed
+
+- Remove Environment deletes the `.venv` through a new server endpoint (`POST /api/venv-remove`), so it works on servers that refuse hidden paths (the default `allow_hidden=False`)
+- Kernel lookup uses the server's configured kernel spec manager, so a custom `name_format` no longer breaks Unregister and Remove
+- A card whose display name is shared by kernels in different directories is refused instead of acting on the first match
+- Unregister posts the environment's absolute path and reports a failed unregister
+- Paths convert against the server root reported by the backend instead of a home directory guessed from `/home/<name>`
+- Kernel cards without a logo get the context menu
+- Production build pins webpack 5.106.0, because later versions crash license-webpack-plugin
+
 ## 1.2.11
 
 - Added 6 new tests for schema/plugin.json menu configuration validation
