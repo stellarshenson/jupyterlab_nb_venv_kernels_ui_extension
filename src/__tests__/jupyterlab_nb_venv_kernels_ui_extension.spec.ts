@@ -1,13 +1,23 @@
 /**
  * Unit tests for jupyterlab_nb_venv_kernels_ui_extension
  *
- * Tests verify the kernel-card descriptor enrichment, the env matching
- * logic, and the context menu configuration for kernel launcher cards.
+ * Tests exercise the shipped helpers in `src/utils.ts` and the real
+ * `schema/plugin.json`: kernel-card descriptor enrichment, env matching,
+ * path conversion, the tooltip text and the context menu configuration.
  */
 
-// Data attribute the extension stamps on kernel launcher cards. Mirrors
-// KERNEL_CARD_ATTR in src/index.ts. The context menu selector keys off it.
-const KERNEL_CARD_ATTR = 'data-jp-kernel-display-name';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  buildKernelTooltipText,
+  enrichKernelCard,
+  IVenvEnvironment,
+  KERNEL_CARD_ATTR,
+  matchVenvEnvironment,
+  toRelativePath,
+  venvDirFromExecutable
+} from '../utils';
+
 const KERNEL_CARD_SELECTOR = `.jp-LauncherCard[${KERNEL_CARD_ATTR}]`;
 
 // Expected context menu commands for kernel launcher cards
@@ -18,58 +28,12 @@ const EXPECTED_COMMANDS = [
   'launcher:remove-venv-environment'
 ];
 
-// Schema configuration mirrored from schema/plugin.json
-const pluginSchema = {
-  'jupyter.lab.menus': {
-    context: [
-      {
-        command: 'launcher:show-kernel-in-file-browser',
-        selector: KERNEL_CARD_SELECTOR,
-        rank: 10
-      },
-      {
-        command: 'launcher:open-terminal-at-kernel',
-        selector: KERNEL_CARD_SELECTOR,
-        rank: 11
-      },
-      {
-        command: 'launcher:unregister-venv-kernel',
-        selector: KERNEL_CARD_SELECTOR,
-        rank: 12
-      },
-      {
-        command: 'launcher:remove-venv-environment',
-        selector: KERNEL_CARD_SELECTOR,
-        rank: 13
-      }
-    ]
-  }
-};
-
-// Mirror of kernelDisplayNameForCard / enrichKernelCard from src/index.ts.
-function kernelDisplayNameForCard(card: HTMLElement): string | null {
-  const icon = card.querySelector(
-    'img.jp-Launcher-kernelIcon'
-  ) as HTMLImageElement | null;
-  if (!icon) {
-    return null;
-  }
-  const label = card
-    .querySelector('.jp-LauncherCard-label')
-    ?.textContent?.trim();
-  const displayName = (icon.alt || label || card.title || '').trim();
-  return displayName || null;
-}
-
-function enrichKernelCard(card: HTMLElement): void {
-  if (card.hasAttribute(KERNEL_CARD_ATTR)) {
-    return;
-  }
-  const displayName = kernelDisplayNameForCard(card);
-  if (displayName) {
-    card.setAttribute(KERNEL_CARD_ATTR, displayName);
-  }
-}
+const pluginSchema = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, '..', '..', 'schema', 'plugin.json'),
+    'utf-8'
+  )
+);
 
 // Build a launcher card element similar to what JupyterLab renders.
 function makeKernelCard(opts: {
@@ -117,7 +81,44 @@ function makeNonKernelCard(label: string): HTMLElement {
   return card;
 }
 
+// A kernel whose kernelspec ships no logo: JupyterLab renders the first
+// letter in a div instead of an <img class="jp-Launcher-kernelIcon">.
+function makeNoLogoKernelCard(displayName: string): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'jp-LauncherCard';
+  card.setAttribute('title', displayName);
+  const iconWrap = document.createElement('div');
+  iconWrap.className = 'jp-LauncherCard-icon';
+  const letter = document.createElement('div');
+  letter.className = 'jp-LauncherCard-noKernelIcon';
+  letter.textContent = displayName[0].toUpperCase();
+  iconWrap.appendChild(letter);
+  const label = document.createElement('div');
+  label.className = 'jp-LauncherCard-label';
+  const p = document.createElement('p');
+  p.textContent = displayName;
+  label.appendChild(p);
+  card.appendChild(iconWrap);
+  card.appendChild(label);
+  return card;
+}
+
 describe('kernel card enrichment', () => {
+  // Regression DEF-MENU-12: a logo-less kernel card got no descriptor.
+  it('stamps a kernel card that has no logo, using the label text', () => {
+    const card = makeNoLogoKernelCard('No Logo Kernel');
+    enrichKernelCard(card);
+    expect(card.getAttribute(KERNEL_CARD_ATTR)).toBe('No Logo Kernel');
+  });
+
+  it('calls onStamped once, with the stamped display name', () => {
+    const card = makeKernelCard({ displayName: 'Python [uv env:demo]' });
+    const seen: string[] = [];
+    enrichKernelCard(card, (_card, name) => seen.push(name));
+    enrichKernelCard(card, (_card, name) => seen.push(name));
+    expect(seen).toEqual(['Python [uv env:demo]']);
+  });
+
   it('stamps the descriptor on a kernel card using the icon alt text', () => {
     const card = makeKernelCard({ displayName: 'Python [uv env:cp-kpi]' });
     enrichKernelCard(card);
@@ -160,36 +161,7 @@ describe('kernel card enrichment', () => {
   });
 });
 
-// Mirror of findVenvEnvironment matching logic from src/index.ts.
-// Direct import is avoided because the plugin pulls in JupyterLab's ESM
-// dependency chain that Jest cannot resolve without extensive mocking.
-interface IVenvEnvironment {
-  name: string;
-  custom_name: string | null;
-  type: string;
-  exists: boolean;
-  has_kernel: boolean;
-  path: string;
-}
-
-function absoluteEnvPath(
-  envPath: string,
-  workspaceRoot: string | undefined
-): string | null {
-  if (!envPath) {
-    return null;
-  }
-  if (envPath.startsWith('/')) {
-    return envPath.replace(/\/+$/, '');
-  }
-  if (!workspaceRoot || !workspaceRoot.startsWith('/')) {
-    return null;
-  }
-  return (
-    workspaceRoot.replace(/\/+$/, '') + '/' + envPath.replace(/^\/+|\/+$/g, '')
-  );
-}
-
+// Adapter keeping the call shape the matching tests were written against.
 function findVenvEnvironmentMatch(
   environments: IVenvEnvironment[],
   displayName: string,
@@ -197,59 +169,12 @@ function findVenvEnvironmentMatch(
   workspaceRoot?: string,
   resourceDir?: string | null
 ): IVenvEnvironment | null {
-  if (
-    executablePath &&
-    executablePath.startsWith('/') &&
-    resourceDir &&
-    resourceDir.startsWith('/')
-  ) {
-    let attemptedPathMatch = false;
-    for (const env of environments) {
-      if (env.type === 'conda') {
-        continue;
-      }
-      const envAbs = absoluteEnvPath(env.path, workspaceRoot);
-      if (!envAbs) {
-        continue;
-      }
-      attemptedPathMatch = true;
-      const prefix = envAbs + '/';
-      if (executablePath.startsWith(prefix) && resourceDir.startsWith(prefix)) {
-        return env;
-      }
-    }
-    if (attemptedPathMatch) {
-      return null;
-    }
-  }
-
-  const candidates = environments
-    .filter(env => env.type !== 'conda')
-    .slice()
-    .sort((a, b) => {
-      const aLen = Math.max(
-        (a.name || '').length,
-        (a.custom_name || '').length
-      );
-      const bLen = Math.max(
-        (b.name || '').length,
-        (b.custom_name || '').length
-      );
-      return bLen - aLen;
-    });
-
-  for (const env of candidates) {
-    const envName = env.name || '';
-    const customName = env.custom_name || '';
-    if (
-      (envName && displayName.includes(envName)) ||
-      (customName && displayName.includes(customName))
-    ) {
-      return env;
-    }
-  }
-
-  return null;
+  return matchVenvEnvironment(
+    { environments, workspace_root: workspaceRoot as string },
+    displayName,
+    executablePath,
+    resourceDir
+  );
 }
 
 describe('findVenvEnvironment matching', () => {
@@ -402,6 +327,33 @@ describe('findVenvEnvironment matching', () => {
     expect(match?.name).toBe('cp-kpi');
   });
 
+  // Regression DEF-UNREG-10: the matched env must carry an absolute path.
+  // nb_venv_kernels applies abspath() against the server cwd, so a
+  // workspace-relative path sent back to unregister names another directory.
+  it('returns the matched env with its path made absolute', () => {
+    const envs: IVenvEnvironment[] = [
+      {
+        name: 'cp-kpi',
+        custom_name: null,
+        type: 'uv',
+        exists: true,
+        has_kernel: true,
+        path: 'delaval/cp/datascience/.venv'
+      }
+    ];
+    const match = findVenvEnvironmentMatch(
+      envs,
+      'Python [uv env:cp-kpi]',
+      '/home/lab/workspace/delaval/cp/datascience/.venv/bin/python',
+      '/home/lab/workspace',
+      '/home/lab/workspace/delaval/cp/datascience/.venv/share/jupyter/kernels/python3'
+    );
+    expect(match?.path).toBe(
+      '/home/lab/workspace/delaval/cp/datascience/.venv'
+    );
+    expect(envs[0].path).toBe('delaval/cp/datascience/.venv');
+  });
+
   it('disambiguates relative env paths sharing a prefix', () => {
     const envs: IVenvEnvironment[] = [
       {
@@ -500,56 +452,6 @@ describe('findVenvEnvironment matching', () => {
     expect(match?.name).toBe('cp-kpi');
   });
 });
-
-// Mirror of the .venv-directory extraction used by REMOVE_ENVIRONMENT_CMD
-// when handling a standalone kernelspec: pull the `.venv` dir out of an
-// executable_path like `/path/to/.venv/bin/python`.
-function venvDirFromExecutable(exe: string | null | undefined): string | null {
-  if (!exe) {
-    return null;
-  }
-  const m = exe.match(/^(.*\/\.venv)\/bin\/[^/]+$/);
-  return m ? m[1] : null;
-}
-
-// Mirror of buildKernelTooltipText from src/index.ts. The native browser
-// `title` tooltip renders `\n` as line breaks, so we ship plain text - no
-// custom HTML popup, no escaping needed.
-interface IKernelInfoForTooltip {
-  kernel_name: string;
-  executable_path: string | null;
-  resource_dir: string;
-  env_path: string | null;
-  is_global_conda: boolean;
-  is_local: boolean;
-}
-
-function buildKernelTooltipText(
-  displayName: string,
-  info: IKernelInfoForTooltip
-): string {
-  let kind: string;
-  if (info.is_global_conda) {
-    kind = 'Global conda environment';
-  } else if (info.is_local) {
-    kind = 'Local kernelspec';
-  } else {
-    kind = 'System kernelspec';
-  }
-  const lines: string[] = [displayName, ''];
-  lines.push(`Kernel name:   ${info.kernel_name}`);
-  lines.push(`Kind:          ${kind}`);
-  if (info.executable_path) {
-    lines.push(`Executable:    ${info.executable_path}`);
-  }
-  if (info.resource_dir) {
-    lines.push(`Resource dir:  ${info.resource_dir}`);
-  }
-  if (info.env_path) {
-    lines.push(`Env path:      ${info.env_path}`);
-  }
-  return lines.join('\n');
-}
 
 describe('buildKernelTooltipText (native hover tooltip)', () => {
   it('renders all fields on separate lines for a local kernelspec', () => {
@@ -653,6 +555,39 @@ describe('venvDirFromExecutable (standalone remove path)', () => {
     expect(venvDirFromExecutable(undefined)).toBeNull();
     expect(venvDirFromExecutable('')).toBeNull();
     expect(venvDirFromExecutable('python')).toBeNull();
+  });
+});
+
+// Regression DEF-PATH-11: the root used to arrive as `~/...` and HOME was
+// guessed from a /home/<name> pattern, so any other home dir failed.
+describe('toRelativePath', () => {
+  it('converts a path under the root', () => {
+    expect(toRelativePath('/root/workspace/proj', '/root/workspace')).toBe(
+      'proj'
+    );
+  });
+
+  it('returns an empty path for the root itself, trailing slash or not', () => {
+    expect(toRelativePath('/root/workspace/', '/root/workspace')).toBe('');
+    expect(toRelativePath('/root/workspace', '/root/workspace/')).toBe('');
+  });
+
+  it('returns null outside the root, including a sibling sharing its prefix', () => {
+    expect(toRelativePath('/opt/conda', '/root/workspace')).toBeNull();
+    expect(toRelativePath('/root/workspace2/x', '/root/workspace')).toBeNull();
+  });
+
+  it('returns null when the root is not absolute', () => {
+    expect(toRelativePath('/home/u/workspace/proj', '~/workspace')).toBeNull();
+    expect(toRelativePath('/home/u/workspace/proj', '')).toBeNull();
+  });
+
+  // A backend older than the frontend (upgrade without a server restart)
+  // sends no server_root at all.
+  it('returns null when the root is missing', () => {
+    expect(
+      toRelativePath('/home/u/workspace/proj', undefined as unknown as string)
+    ).toBeNull();
   });
 });
 

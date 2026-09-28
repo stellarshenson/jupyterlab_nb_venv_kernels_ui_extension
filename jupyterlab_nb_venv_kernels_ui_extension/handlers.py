@@ -4,52 +4,16 @@ API handlers for kernel path resolution.
 import json
 import os
 import re
+import shutil
 
 from jupyter_server.base.handlers import APIHandler
-from jupyter_server.utils import url_path_join
+from jupyter_server.utils import ensure_async, url_path_join
 from jupyter_client.kernelspec import KernelSpecManager
 import tornado
 
 
 class KernelPathHandler(APIHandler):
     """Handler for getting kernel installation path by display name."""
-
-    def _get_all_kernelspecs(self) -> dict:
-        """Get all kernelspecs from standard and dynamic providers.
-
-        Queries the standard KernelSpecManager plus any installed dynamic
-        kernel providers like nb_conda_kernels and nb_venv_kernels.
-
-        Returns:
-            Combined dict of all available kernelspecs
-        """
-        all_specs = {}
-
-        # Standard kernelspecs
-        ksm = KernelSpecManager()
-        all_specs.update(ksm.get_all_specs())
-
-        # Try nb_conda_kernels if available
-        try:
-            from nb_conda_kernels import CondaKernelSpecManager
-            cksm = CondaKernelSpecManager()
-            all_specs.update(cksm.get_all_specs())
-        except ImportError:
-            pass
-        except Exception as e:
-            self.log.debug(f"Error loading conda kernels: {e}")
-
-        # Try nb_venv_kernels if available
-        try:
-            from nb_venv_kernels import VEnvKernelSpecManager
-            vksm = VEnvKernelSpecManager()
-            all_specs.update(vksm.get_all_specs())
-        except ImportError:
-            pass
-        except Exception as e:
-            self.log.debug(f"Error loading venv kernels: {e}")
-
-        return all_specs
 
     @tornado.web.authenticated
     async def get(self, display_name: str):
@@ -59,26 +23,47 @@ class KernelPathHandler(APIHandler):
             display_name: The display name of the kernel (URL-decoded by tornado)
         """
         try:
-            # Get all available kernelspecs including dynamic providers
-            all_specs = self._get_all_kernelspecs()
+            # The server's configured manager lists what the launcher shows;
+            # a fresh manager would ignore its config (e.g. name_format)
+            all_specs = await ensure_async(self.kernel_spec_manager.get_all_specs())
 
-            # Find the kernel matching the display name
-            kernel_info = None
-            kernel_name = None
+            # Find the kernels matching the display name
+            matches = [
+                (name, spec_data)
+                for name, spec_data in all_specs.items()
+                if spec_data.get("spec", {}).get("display_name") == display_name
+            ]
 
-            for name, spec_data in all_specs.items():
-                spec = spec_data.get("spec", {})
-                if spec.get("display_name") == display_name:
-                    kernel_name = name
-                    kernel_info = spec_data
-                    break
-
-            if kernel_info is None:
+            if not matches:
                 self.set_status(404)
                 self.finish(json.dumps({
                     "error": f"Kernel with display name '{display_name}' not found"
                 }))
                 return
+
+            # The launcher card carries only the display name. Two kernelspecs
+            # in different directories under one name (a user kernelspec and a
+            # managed env's kernel) cannot be told apart, and acting on the
+            # first would act on the wrong kernel. The same kernelspec listed
+            # under two names by two providers shares one directory and stays
+            # resolvable.
+            resource_dirs = {
+                os.path.realpath(spec_data.get("resource_dir", ""))
+                for _, spec_data in matches
+            }
+            if len(resource_dirs) > 1:
+                self.set_status(409)
+                self.finish(json.dumps({
+                    "error": (
+                        f"Display name '{display_name}' is shared by kernels "
+                        f"{', '.join(sorted(name for name, _ in matches))} in "
+                        f"different directories; the card cannot be resolved "
+                        f"to one kernel"
+                    )
+                }))
+                return
+
+            kernel_name, kernel_info = matches[0]
 
             spec = kernel_info.get("spec", {})
             resource_dir = kernel_info.get("resource_dir", "")
@@ -98,6 +83,13 @@ class KernelPathHandler(APIHandler):
             # via DELETE /api/kernelspecs/<name>: local yes, global no.
             is_local = self._is_local_kernelspec(resource_dir)
 
+            # Absolute root of the contents manager, so the frontend can turn
+            # the paths above into contents-API paths. The page config's
+            # `serverRoot` has the home directory collapsed to `~`, which the
+            # browser cannot expand.
+            root_dir = getattr(self.contents_manager, "root_dir", "") or ""
+            server_root = os.path.abspath(root_dir) if root_dir else ""
+
             self.finish(json.dumps({
                 "kernel_name": kernel_name,
                 "display_name": display_name,
@@ -105,7 +97,8 @@ class KernelPathHandler(APIHandler):
                 "executable_path": executable_path,
                 "env_path": env_path,
                 "is_global_conda": is_global_conda,
-                "is_local": is_local
+                "is_local": is_local,
+                "server_root": server_root
             }))
 
         except Exception as e:
@@ -346,6 +339,29 @@ class KernelspecDeleteHandler(APIHandler):
             self.finish(json.dumps({"error": str(e)}))
 
 
+class VenvRemoveHandler(APIHandler):
+    """Delete a `.venv` directory from disk (`rm -rf`).
+
+    The contents API cannot do it: it refuses dot-directories unless
+    `ContentsManager.allow_hidden` is set, which a default server does not.
+    """
+
+    @tornado.web.authenticated
+    def post(self):
+        path = os.path.realpath((self.get_json_body() or {}).get("path") or "")
+        if os.path.basename(path) != ".venv" or not os.path.isdir(path):
+            self.set_status(400)
+            self.finish(json.dumps({"error": f"Not a .venv directory: {path}"}))
+            return
+        try:
+            shutil.rmtree(path)
+        except OSError as e:
+            self.set_status(500)
+            self.finish(json.dumps({"error": str(e)}))
+            return
+        self.finish(json.dumps({"success": True, "path": path}))
+
+
 def setup_handlers(web_app):
     """Setup the API handlers.
 
@@ -375,6 +391,7 @@ def setup_handlers(web_app):
 
     handlers = [
         (kernel_path_route, KernelPathHandler),
-        (kernelspec_delete_route, KernelspecDeleteHandler)
+        (kernelspec_delete_route, KernelspecDeleteHandler),
+        (url_path_join(base_url, "api", "venv-remove"), VenvRemoveHandler)
     ]
     web_app.add_handlers(host_pattern, handlers)

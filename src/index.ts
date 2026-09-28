@@ -7,8 +7,20 @@ import { ILauncher } from '@jupyterlab/launcher';
 import { ITerminalTracker } from '@jupyterlab/terminal';
 import { showErrorMessage, showDialog, Dialog } from '@jupyterlab/apputils';
 import { ServerConnection } from '@jupyterlab/services';
-import { URLExt, PageConfig } from '@jupyterlab/coreutils';
+import { URLExt } from '@jupyterlab/coreutils';
 import { Widget } from '@lumino/widgets';
+import {
+  buildKernelTooltipText,
+  IKernelPathResponse,
+  isLocalVenvEnvironment,
+  IVenvEnvironment,
+  IVenvEnvironmentsResponse,
+  KERNEL_CARD_ATTR,
+  enrichKernelCard,
+  matchVenvEnvironment,
+  toRelativePath,
+  venvDirFromExecutable
+} from './utils';
 
 /**
  * Command IDs for the extension.
@@ -24,53 +36,21 @@ const REMOVE_ENVIRONMENT_CMD = 'launcher:remove-venv-environment';
 const NB_VENV_KERNELS_REFRESH_CMD = 'nb_venv_kernels:refresh';
 
 /**
- * Interface for the kernel path API response.
- */
-interface IKernelPathResponse {
-  kernel_name: string;
-  display_name: string;
-  resource_dir: string;
-  executable_path: string | null;
-  env_path: string | null;
-  is_global_conda: boolean;
-  /**
-   * True when the kernelspec's `resource_dir` is under the user's home
-   * directory (e.g. `~/.local/share/jupyter/kernels/`). Local kernelspecs
-   * may be removed by the plugin via `DELETE /api/kernelspecs/<name>`
-   * when not managed by nb_venv_kernels; global / system kernelspecs may
-   * not - they require admin action.
-   */
-  is_local: boolean;
-  error?: string;
-}
-
-/**
- * Interface for nb_venv_kernels environment entry.
- */
-interface IVenvEnvironment {
-  name: string;
-  custom_name: string | null;
-  type: string;
-  exists: boolean;
-  has_kernel: boolean;
-  path: string;
-}
-
-/**
- * Interface for nb_venv_kernels environments list response.
- */
-interface IVenvEnvironmentsResponse {
-  environments: IVenvEnvironment[];
-  workspace_root: string;
-}
-
-/**
  * Interface for nb_venv_kernels unregister response.
  */
 interface IUnregisterResponse {
   success: boolean;
   message?: string;
   error?: string;
+}
+
+/**
+ * Body of nb_venv_kernels' `POST /nb-venv-kernels/unregister` response.
+ */
+interface IUnregisterReply {
+  unregistered?: boolean;
+  error?: string;
+  message?: string;
 }
 
 /**
@@ -113,17 +93,6 @@ function showLoadingDialog(message: string): Dialog<unknown> {
   dialog.launch();
   return dialog;
 }
-
-/**
- * Data attribute stamped on launcher cards that represent a kernel.
- *
- * Presence of the attribute is the explicit "this card is a kernel" marker
- * that the context menu selector in `schema/plugin.json` keys off - so the
- * menu never appears on Terminal, Text File, service, or other non-kernel
- * cards. The attribute value is the kernel display name, used for path
- * resolution when a command runs.
- */
-const KERNEL_CARD_ATTR = 'data-jp-kernel-display-name';
 
 /**
  * Flag indicating whether nb_venv_kernels extension is available.
@@ -209,57 +178,13 @@ async function fetchVenvEnvironments(): Promise<IVenvEnvironmentsResponse | null
 }
 
 /**
- * Resolve an nb_venv_kernels environment path to an absolute path.
- *
- * nb_venv_kernels reports `env.path` relative to its `workspace_root` (e.g.
- * `delaval/.../datascience/.venv`); the kernelspec `argv[0]` we compare it
- * against is absolute. Join them so the prefix check works.
- *
- * @param envPath - The `path` field from an nb_venv_kernels environment
- * @param workspaceRoot - The `workspace_root` field from the environments response
- * @returns The absolute path, or null if it cannot be resolved
- */
-function absoluteEnvPath(
-  envPath: string,
-  workspaceRoot: string | undefined
-): string | null {
-  if (!envPath) {
-    return null;
-  }
-  if (envPath.startsWith('/')) {
-    return envPath.replace(/\/+$/, '');
-  }
-  if (!workspaceRoot || !workspaceRoot.startsWith('/')) {
-    return null;
-  }
-  return (
-    workspaceRoot.replace(/\/+$/, '') + '/' + envPath.replace(/^\/+|\/+$/g, '')
-  );
-}
-
-/**
- * Find a venv environment matching the given display name.
- *
- * Deterministic path-based matching: a kernel "belongs to" an env only if
- * BOTH its `executable_path` AND its `resource_dir` are under the env's
- * absolute path. The first prefix alone is not enough - a standalone
- * kernelspec (installed via `ipython kernel install`) whose `argv[0]` just
- * happens to point at another env's `.venv/bin/python` lives in
- * `~/.local/share/jupyter/kernels/<name>/`, not inside the env tree, so it
- * must NOT be resolved to that env (otherwise Remove Environment would
- * delete the shared .venv when the user only wanted to drop the
- * standalone kernel). nb_venv_kernels' synthesized dynamic kernels have
- * their `resource_dir` under the env (typically
- * `<env_path>/share/jupyter/kernels/...`), so they pass both checks.
- *
- * Falls back to substring matching on env names when neither path is
- * available, or when none of the env paths could be resolved to absolute
- * (old nb_venv_kernels without `workspace_root`).
+ * Find the nb_venv_kernels environment a kernel belongs to; see
+ * {@link matchVenvEnvironment} for the matching rules.
  *
  * @param displayName - The kernel display name (used for fallback match)
  * @param executablePath - The kernel's `argv[0]` python path, if known
  * @param resourceDir - The kernelspec's `resource_dir`, if known
- * @returns The matching environment or null
+ * @returns The matching environment, with an absolute `path`, or null
  */
 async function findVenvEnvironment(
   displayName: string,
@@ -270,72 +195,12 @@ async function findVenvEnvironment(
   if (!envData) {
     return null;
   }
-
-  // Path-based match (preferred) - both prefixes must be under the env's
-  // absolute path. If we have absolute paths AND at least one env path
-  // resolved, we trust the result: a non-match is then definitive (kernel
-  // not registered with nb_venv_kernels), so we do NOT fall back to
-  // substring matching - that would re-introduce the very collision bug
-  // this function prevents.
-  if (
-    executablePath &&
-    executablePath.startsWith('/') &&
-    resourceDir &&
-    resourceDir.startsWith('/')
-  ) {
-    let attemptedPathMatch = false;
-    for (const env of envData.environments) {
-      if (env.type === 'conda') {
-        continue;
-      }
-      const envAbs = absoluteEnvPath(env.path, envData.workspace_root);
-      if (!envAbs) {
-        continue;
-      }
-      attemptedPathMatch = true;
-      const prefix = envAbs + '/';
-      if (executablePath.startsWith(prefix) && resourceDir.startsWith(prefix)) {
-        return env;
-      }
-    }
-    if (attemptedPathMatch) {
-      return null;
-    }
-    // No env path could be resolved to absolute - fall through to substring.
-  }
-
-  // Fallback: substring match on env names, used when executablePath is
-  // missing or relative (e.g. nb_venv_kernels did not rewrite argv[0] for
-  // the current env). Sort by name length descending so longer names try
-  // first - mitigates substring collisions when path matching is
-  // unavailable.
-  const candidates = envData.environments
-    .filter(env => env.type !== 'conda')
-    .slice()
-    .sort((a, b) => {
-      const aLen = Math.max(
-        (a.name || '').length,
-        (a.custom_name || '').length
-      );
-      const bLen = Math.max(
-        (b.name || '').length,
-        (b.custom_name || '').length
-      );
-      return bLen - aLen;
-    });
-
-  for (const env of candidates) {
-    const envName = env.name || '';
-    const customName = env.custom_name || '';
-    if (
-      (envName && displayName.includes(envName)) ||
-      (customName && displayName.includes(customName))
-    ) {
-      return env;
-    }
-  }
-
-  return null;
+  return matchVenvEnvironment(
+    envData,
+    displayName,
+    executablePath,
+    resourceDir
+  );
 }
 
 /**
@@ -360,12 +225,20 @@ async function unregisterVenvKernel(
       settings
     );
 
-    const data = (await response.json()) as IUnregisterResponse;
+    const data = (await response.json()) as IUnregisterReply;
 
     if (!response.ok) {
       return {
         success: false,
         error: data.error || 'Failed to unregister kernel'
+      };
+    }
+    // nb_venv_kernels answers 200 with `unregistered: false` when the path
+    // is not in its registry - that is a failure, not a success.
+    if (data.unregistered === false) {
+      return {
+        success: false,
+        error: `${envPath} is not in the nb_venv_kernels registry`
       };
     }
 
@@ -380,90 +253,31 @@ async function unregisterVenvKernel(
 }
 
 /**
- * Check if an environment path is a local .venv environment.
- * Local environments have .venv in their path.
+ * Delete a `.venv` directory from disk through the extension's Python side.
+ * The contents API cannot: it refuses dot-directories on a default server.
  *
- * @param envPath - The environment path to check
- * @returns true if the environment is local (.venv based)
- */
-function isLocalVenvEnvironment(envPath: string): boolean {
-  return envPath.includes('/.venv') || envPath.includes('\\.venv');
-}
-
-/**
- * Remove a directory via the Jupyter server contents API.
- *
- * @param dirPath - The absolute path to the directory to remove
- * @param serverRoot - The server root directory
+ * @param venvPath - The absolute path of the `.venv` directory
  * @returns Promise resolving to success status and optional error message
  */
-async function removeDirectory(
-  dirPath: string,
-  serverRoot: string
+async function removeVenv(
+  venvPath: string
 ): Promise<{ success: boolean; error?: string }> {
   const settings = ServerConnection.makeSettings();
-
-  // Determine relative path for the contents API
-  let relativePath: string | null = null;
-
-  // If path doesn't start with '/', it's already relative - use it directly
-  if (!dirPath.startsWith('/')) {
-    relativePath = dirPath;
-    console.debug(`Path is already relative: ${relativePath}`);
-  } else {
-    // Convert absolute path to relative path
-    relativePath = toRelativePath(dirPath, serverRoot);
-
-    // If standard conversion fails, try alternative approaches
-    if (relativePath === null) {
-      console.debug(
-        `Path conversion failed: dirPath="${dirPath}", serverRoot="${serverRoot}"`
-      );
-
-      // Fallback: if serverRoot is empty or '~', try using home-relative path
-      if (!serverRoot || serverRoot === '~' || serverRoot === '') {
-        // Extract path from after '/home/username' or similar
-        const homeMatch = dirPath.match(/^\/(?:home|Users)\/[^/]+\/(.+)$/);
-        if (homeMatch) {
-          relativePath = homeMatch[1];
-          console.debug(`Using home-relative fallback path: ${relativePath}`);
-        }
-      }
-
-      // If still null, the path is truly outside workspace
-      if (relativePath === null) {
-        return {
-          success: false,
-          error: `Environment path "${dirPath}" is outside the workspace (root: "${serverRoot}") and cannot be removed.`
-        };
-      }
-    }
-  }
-
-  const url = URLExt.join(settings.baseUrl, 'api', 'contents', relativePath);
-
+  const url = URLExt.join(settings.baseUrl, 'api', 'venv-remove');
   try {
     const response = await ServerConnection.makeRequest(
       url,
-      { method: 'DELETE' },
+      { method: 'POST', body: JSON.stringify({ path: venvPath }) },
       settings
     );
-
     if (!response.ok) {
-      const text = await response.text();
-      return {
-        success: false,
-        error: `Server error: ${response.status} ${text}`
-      };
+      const data = await response.json();
+      return { success: false, error: data.error || `HTTP ${response.status}` };
     }
-
     return { success: true };
   } catch (error) {
-    console.error('Error removing directory:', error);
-    return {
-      success: false,
-      error: `Network error: ${error}`
-    };
+    console.error('Error removing .venv:', error);
+    return { success: false, error: `Network error: ${error}` };
   }
 }
 
@@ -548,118 +362,18 @@ async function refuseGlobalKernelspec(
 }
 
 /**
- * Expand tilde in path using the home directory extracted from absolutePath.
- *
- * @param path - Path that may contain ~
- * @param absolutePath - An absolute path to extract home directory from
- * @returns Path with ~ expanded, or original if expansion not possible
- */
-function expandTilde(path: string, absolutePath: string): string {
-  if (!path.startsWith('~')) {
-    return path;
-  }
-
-  // Extract home directory from absolute path
-  // Matches /home/username or /Users/username
-  const match = absolutePath.match(/^(\/(?:home|Users)\/[^/]+)/);
-  if (!match) {
-    return path;
-  }
-
-  const homedir = match[1];
-  if (path === '~') {
-    return homedir;
-  }
-  if (path.startsWith('~/')) {
-    return homedir + path.slice(1);
-  }
-  return path;
-}
-
-/**
- * Convert an absolute filesystem path to a path relative to the server root.
- *
- * @param absolutePath - The absolute filesystem path
- * @param serverRoot - The server's root directory (may contain ~)
- * @returns The relative path for the file browser, or null if outside server root
- */
-function toRelativePath(
-  absolutePath: string,
-  serverRoot: string
-): string | null {
-  // Normalize path - ensure no trailing slashes
-  const normalizedPath = absolutePath.replace(/\/+$/, '');
-
-  // Expand tilde in serverRoot and normalize
-  const normalizedRoot = expandTilde(serverRoot, absolutePath).replace(
-    /\/+$/,
-    ''
-  );
-
-  // Check if path is the server root
-  if (normalizedPath === normalizedRoot) {
-    return '';
-  }
-
-  // Check if path is inside the server root
-  const rootPrefix = normalizedRoot + '/';
-  if (normalizedPath.startsWith(rootPrefix)) {
-    return normalizedPath.slice(rootPrefix.length);
-  }
-
-  // Path is outside the server root
-  return null;
-}
-
-/**
- * Determine whether a launcher card represents a kernel and, if so, return
- * its display name.
- *
- * JupyterLab renders kernel launcher cards (Notebook / Console items backed
- * by a kernelspec) with an `<img class="jp-Launcher-kernelIcon">` showing
- * the kernelspec logo; non-kernel cards (Terminal, Text File, services,
- * etc.) render an inline `<svg>` icon instead. This is the only signal that
- * survives category renaming / localization, so we use it - but only to
- * decide whether to stamp the card. Everything downstream keys off the
- * explicit {@link KERNEL_CARD_ATTR} attribute we write, never the icon.
- *
- * @param card - A `.jp-LauncherCard` element
- * @returns The kernel display name, or null if the card is not a kernel
- */
-function kernelDisplayNameForCard(card: HTMLElement): string | null {
-  const icon = card.querySelector<HTMLImageElement>(
-    'img.jp-Launcher-kernelIcon'
-  );
-  if (!icon) {
-    return null;
-  }
-  const label = card
-    .querySelector('.jp-LauncherCard-label')
-    ?.textContent?.trim();
-  const displayName = (icon.alt || label || card.title || '').trim();
-  return displayName || null;
-}
-
-/**
- * Stamp the kernel descriptor onto a single launcher card if it is a kernel
- * card. Idempotent.
+ * Stamp one card, then fetch kernel info in the background and rewrite the
+ * native `title` so the standard hover tooltip shows display name + kernel
+ * name + kind + paths instead of just the display name.
  *
  * @param card - A `.jp-LauncherCard` element
  */
-function enrichKernelCard(card: HTMLElement): void {
-  if (card.hasAttribute(KERNEL_CARD_ATTR)) {
-    return;
-  }
-  const displayName = kernelDisplayNameForCard(card);
-  if (displayName) {
-    card.setAttribute(KERNEL_CARD_ATTR, displayName);
-    // Best-effort: fetch kernel info in the background and rewrite the
-    // native `title` so the standard hover tooltip shows display name +
-    // kernel name + kind + paths instead of just the display name.
-    enhanceKernelCardTitle(card, displayName).catch(() => {
+function enrichKernelCardWithTitle(card: HTMLElement): void {
+  enrichKernelCard(card, (stamped, displayName) => {
+    enhanceKernelCardTitle(stamped, displayName).catch(() => {
       // Swallow - title enrichment is a UX nicety, not load-critical.
     });
-  }
+  });
 }
 
 /**
@@ -672,11 +386,11 @@ function enrichKernelCardsIn(root: ParentNode): void {
     root instanceof HTMLElement &&
     root.classList.contains('jp-LauncherCard')
   ) {
-    enrichKernelCard(root);
+    enrichKernelCardWithTitle(root);
   }
   root
     .querySelectorAll<HTMLElement>('.jp-LauncherCard')
-    .forEach(enrichKernelCard);
+    .forEach(enrichKernelCardWithTitle);
 }
 
 /**
@@ -734,40 +448,6 @@ const kernelInfoInflight = new Map<
   string,
   Promise<IKernelPathResponse | null>
 >();
-
-/**
- * Build a multi-line plain-text tooltip body for a kernel.
- *
- * Browsers render `\n` in the `title` attribute as line breaks in the
- * native hover tooltip, so this is just the standard JupyterLab card
- * tooltip with extra rows underneath the display name.
- */
-function buildKernelTooltipText(
-  displayName: string,
-  info: IKernelPathResponse
-): string {
-  let kind: string;
-  if (info.is_global_conda) {
-    kind = 'Global conda environment';
-  } else if (info.is_local) {
-    kind = 'Local kernelspec';
-  } else {
-    kind = 'System kernelspec';
-  }
-  const lines: string[] = [displayName, ''];
-  lines.push(`Kernel name:   ${info.kernel_name}`);
-  lines.push(`Kind:          ${kind}`);
-  if (info.executable_path) {
-    lines.push(`Executable:    ${info.executable_path}`);
-  }
-  if (info.resource_dir) {
-    lines.push(`Resource dir:  ${info.resource_dir}`);
-  }
-  if (info.env_path) {
-    lines.push(`Env path:      ${info.env_path}`);
-  }
-  return lines.join('\n');
-}
 
 /**
  * Fetch kernel info (cached) and write the rich multi-line text into the
@@ -831,9 +511,6 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
     const { commands } = app;
 
-    // Get the server root directory from PageConfig
-    const serverRoot = PageConfig.getOption('serverRoot');
-
     // Stamp an explicit kernel descriptor on every kernel launcher card so
     // the context menu (registered in schema/plugin.json against
     // `.jp-LauncherCard[data-jp-kernel-display-name]`) only ever appears on
@@ -869,8 +546,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         if (!kernelInfo) {
           await showErrorMessage(
-            'Kernel Not Found',
-            `Could not find path information for kernel "${displayName}".`
+            'Kernel Not Resolved',
+            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
           );
           return;
         }
@@ -896,7 +573,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const targetPath = kernelInfo.env_path || kernelInfo.resource_dir;
 
         // Convert to relative path for file browser
-        const relativePath = toRelativePath(targetPath, serverRoot);
+        const relativePath = toRelativePath(targetPath, kernelInfo.server_root);
 
         // If outside workspace, fallback to workspace root
         const navigatePath = relativePath === null ? '' : relativePath;
@@ -934,8 +611,8 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         if (!kernelInfo) {
           await showErrorMessage(
-            'Kernel Not Found',
-            `Could not find path information for kernel "${displayName}".`
+            'Kernel Not Resolved',
+            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
           );
           return;
         }
@@ -961,7 +638,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
         const targetPath = kernelInfo.env_path || kernelInfo.resource_dir;
 
         // Convert to relative path for terminal (terminal:create-new requires relative path)
-        const relativePath = toRelativePath(targetPath, serverRoot);
+        const relativePath = toRelativePath(targetPath, kernelInfo.server_root);
 
         // If outside workspace, use empty string (workspace root)
         const terminalCwd = relativePath === null ? '' : relativePath;
@@ -1019,18 +696,22 @@ const plugin: JupyterFrontEndPlugin<void> = {
           resolveDialog.dispose();
         }
 
+        // A kernel the server cannot resolve to one kernelspec (unknown, or a
+        // display name shared by kernels in different directories) must not
+        // fall through to the env-name substring match below.
+        if (!kernelInfo) {
+          await showErrorMessage(
+            'Cannot Unregister',
+            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
+          );
+          return;
+        }
+
         // Standalone kernelspec path: nb_venv_kernels does not know about
         // this kernel. For local kernelspecs (under the user's home) we
         // delete the kernelspec directly via the standard Jupyter API; for
         // system / global kernelspecs we refuse.
         if (!env) {
-          if (!kernelInfo) {
-            await showErrorMessage(
-              'Cannot Unregister',
-              `Could not resolve kernel "${displayName}".`
-            );
-            return;
-          }
           if (!kernelInfo.is_local) {
             await refuseGlobalKernelspec(displayName, kernelInfo.resource_dir);
             return;
@@ -1152,26 +833,28 @@ const plugin: JupyterFrontEndPlugin<void> = {
           resolveDialog.dispose();
         }
 
+        // A kernel the server cannot resolve to one kernelspec (unknown, or a
+        // display name shared by kernels in different directories) must not
+        // fall through to the env-name substring match below.
+        if (!kernelInfo) {
+          await showErrorMessage(
+            'Cannot Remove',
+            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
+          );
+          return;
+        }
+
         // Standalone kernelspec path: nb_venv_kernels does not know about
         // this kernel. For local kernelspecs we delete the kernelspec dir
         // (and try to delete the .venv folder if executable_path points to
         // one that still exists); for global kernelspecs we refuse.
         if (!env) {
-          if (!kernelInfo) {
-            await showErrorMessage(
-              'Cannot Remove',
-              `Could not resolve kernel "${displayName}".`
-            );
-            return;
-          }
           if (!kernelInfo.is_local) {
             await refuseGlobalKernelspec(displayName, kernelInfo.resource_dir);
             return;
           }
           // Derive the .venv directory from executable_path (".venv/bin/...").
-          const exe = kernelInfo.executable_path || '';
-          const venvMatch = exe.match(/^(.*\/\.venv)\/bin\/[^/]+$/);
-          const venvDir = venvMatch ? venvMatch[1] : null;
+          const venvDir = venvDirFromExecutable(kernelInfo.executable_path);
 
           const confirmWidget = new Widget();
           const confirmP1 = document.createElement('p');
@@ -1211,7 +894,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
             deleteResult = await deleteKernelspec(kernelInfo.kernel_name);
             if (deleteResult.success && venvDir) {
               // Best-effort .venv removal - if it's already gone, that's fine
-              venvResult = await removeDirectory(venvDir, serverRoot);
+              venvResult = await removeVenv(venvDir);
             }
           } finally {
             removeDialog.dispose();
@@ -1308,7 +991,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
           }
 
           // Then remove the directory
-          const removeResult = await removeDirectory(env.path, serverRoot);
+          const removeResult = await removeVenv(env.path);
 
           loadingDialog.dispose();
 

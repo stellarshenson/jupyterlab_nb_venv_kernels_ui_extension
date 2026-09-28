@@ -97,9 +97,6 @@
         "duplicate-package-checker-webpack-plugin/chalk": "4.1.2",
         "webpack": "5.106.0"
     },
-    "overrides": {
-        "webpack": "5.106.0"
-    },
     "sideEffects": [
         "style/*.css",
         "style/index.js"
@@ -206,5 +203,8 @@
             "selector-no-vendor-prefix": null,
             "value-no-vendor-prefix": null
         }
+    },
+    "allowScripts": {
+        "@fortawesome/fontawesome-free": true
     }
 }

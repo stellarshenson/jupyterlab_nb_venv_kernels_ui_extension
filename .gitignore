@@ -126,3 +126,7 @@ dmypy.json
 
 # Yarn cache
 .yarn/
+
+.nodeenv/
+ui-tests/.tmp/
+tmp/

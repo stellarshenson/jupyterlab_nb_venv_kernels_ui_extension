@@ -111,7 +111,8 @@ jobs:
     - name: Install the extension
       run: |
         set -eux
-        python -m pip install "jupyterlab>=4.0.0,<5" jupyterlab_nb_venv_kernels_ui_extension*.whl
+        # The UI tests register and remove venv kernels through nb_venv_kernels
+        python -m pip install "jupyterlab>=4.0.0,<5" nb_venv_kernels jupyterlab_nb_venv_kernels_ui_extension*.whl
 
     - name: Install dependencies
       working-directory: ui-tests
