@@ -126,6 +126,46 @@ Spinners, dialogs and tooltips the user sees
   - root-cause: 2026-09-28T13:31:23Z @kj custom singleton `<div>` popup positioned outside the card; the user wanted the standard browser tooltip
   - log: 2026-09-28T13:31:23Z @kj added
   - log: 2026-09-28T13:31:24Z @kj closed: fixed in 7223f89 (v1.2.30)
+- [x] `DEF-UI-17` **Refusal dialog drops the server's reason** - MINOR; a card whose display name is shared by kernels in two directories gets a dialog that guesses between two causes; the server's 409 names the kernels, but fetchKernelPath logs it to the console and returns null; src/index.ts
+  - evidence: Galata 29/29 green 2026-09-28 port 8937; ACC-API-32 red on the old build (dialog showed the guessed message), green on the new; jest 37/37; lint clean
+  - related: DEF-UI-18, DEF-MATCH-13, ACC-API-32 - one fix in fetchKernelPath
+  - repro: two user kernelspecs named Twin Kernel in different dirs, Remove on one card, read the dialog
+  - test-tags: E2E
+  - root-cause: 2026-09-28T20:12:52Z @kj fetchKernelPath returns null on a failed lookup, so callers never see data.error
+  - log: 2026-09-28T20:12:52Z @kj added
+  - log: 2026-09-28T20:19:58Z @kj closed
+- [x] `DEF-UI-18` **Resolve-failure message copied into four dialogs** - MINOR; one 170-character message is written out at 4 sites in src/index.ts (Show in File Browser, Open Terminal, Unregister, Remove); a wording change must edit all 4
+  - evidence: grep -c 'Could not resolve kernel' src/index.ts gives 1 (network-failure fallback); the four dialogs show the reason from fetchKernelPath; Galata 29/29 green 2026-09-28 port 8937; ACC-API-32 red on the old build (dialog showed the guessed message), green on the new; jest 37/37; lint clean
+  - related: DEF-UI-17 - same fix
+  - repro: grep -c 'Could not resolve kernel' src/index.ts gives 4
+  - test-tags: E2E
+  - root-cause: 2026-09-28T20:12:52Z @kj with no reason from fetchKernelPath, each dialog wrote its own copy of the guessed message
+  - log: 2026-09-28T20:12:52Z @kj added
+  - log: 2026-09-28T20:19:58Z @kj closed
+- [x] `DEF-UI-19` **Empty server error gives an empty dialog** - MINOR; fetchKernelPath falls back to 'Server answered <status>' only when data.error is null or undefined; a 500 whose exception has an empty message (str(e) == '') shows a dialog with a title and no body; src/index.ts
+  - evidence: built bundle has n.error||`Server answered ${e.status}`; node: ({error:''}).error || 'Server answered 500' gives 'Server answered 500'; str(asyncio.TimeoutError()) is ''; jest 37/37, Galata 29/29 2026-09-28
+  - related: DEF-UI-17 - same fetchKernelPath change
+  - repro: make get_all_specs raise a bare TimeoutError, run any of the four menu items
+  - test-tags: MANUAL
+  - root-cause: 2026-09-28T20:25:54Z @kj the fallback uses ?? instead of ||, so an empty string is kept
+  - log: 2026-09-28T20:25:54Z @kj added
+  - log: 2026-09-28T20:29:25Z @kj closed
+- [x] `DEF-UI-20` **Shared-name refusal does not say how to fix it** - MINOR; the 409 text from /api/kernel-path names the colliding kernels but ends with 'the card cannot be resolved to one kernel'; it no longer tells the user to give each kernelspec its own display_name; handlers.py
+  - evidence: ACC-API-32 now asserts 'distinct display_name' in all four dialogs: red on the round-4 build, green on the new; Galata 29/29 2026-09-28 port 8937; jest 37/37; lint clean
+  - related: DEF-UI-18, ACC-API-32 - fix instruction lost with the copied message
+  - repro: two user kernelspecs named Twin Kernel, Remove on one card, read the dialog
+  - test-tags: E2E
+  - root-cause: 2026-09-28T20:25:54Z @kj the 409 message states the cause only; the fix instruction lived in the frontend copy that DEF-UI-18 removed
+  - log: 2026-09-28T20:25:54Z @kj added
+  - log: 2026-09-28T20:29:25Z @kj closed
+- [x] `DEF-UI-21` **Shared-name hint points at kernel.json wrongly** - MINOR; the 409 text says 'give each a distinct display_name in its kernel.json'; when both kernels sit in one managed venv, nb_venv_kernels builds both names from name_format, so editing kernel.json changes nothing; handlers.py
+  - evidence: 409 text now ends 'give each a distinct display_name'; ACC-API-32 asserts no 'kernel.json': red on the round-5 build, green on the new; Galata 29/29 2026-09-28 port 8937; jest 37/37; lint clean
+  - related: DEF-UI-20 - hint added there
+  - repro: one managed venv with two Python kernelspecs, default name_format, Remove on its card
+  - test-tags: E2E
+  - root-cause: 2026-09-28T20:34:34Z @kj the hint names kernel.json as the place to fix, but for managed envs the launcher name comes from name_format
+  - log: 2026-09-28T20:34:34Z @kj added
+  - log: 2026-09-28T20:37:57Z @kj closed
 
 ## Unregister `UNREG`
 

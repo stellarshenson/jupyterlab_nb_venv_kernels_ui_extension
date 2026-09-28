@@ -57,8 +57,8 @@ class KernelPathHandler(APIHandler):
                     "error": (
                         f"Display name '{display_name}' is shared by kernels "
                         f"{', '.join(sorted(name for name, _ in matches))} in "
-                        f"different directories; the card cannot be resolved "
-                        f"to one kernel"
+                        f"different directories; give each a distinct "
+                        f"display_name"
                     )
                 }))
                 return

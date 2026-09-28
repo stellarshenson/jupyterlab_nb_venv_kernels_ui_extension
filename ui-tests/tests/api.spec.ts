@@ -2,10 +2,14 @@ import { expect, test } from '@jupyterlab/galata';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  answerDialog,
+  kernelCard,
   kernelspecs,
   labFixtures,
   makeUserKernelspec,
   ROOT,
+  runMenuItem,
+  showLauncher,
   systemKernel
 } from './helpers';
 
@@ -61,6 +65,38 @@ test.describe('server API', () => {
     );
     expect(response.status()).toBe(409);
     expect((await response.json()).error).toContain('nbvk-twin-a');
+  });
+
+  test('ACC-API-32 the refusal dialog shows the server reason', async ({
+    page
+  }) => {
+    makeUserKernelspec(
+      'nbvk-twin-a',
+      'Twin Kernel',
+      path.join(ROOT, 'twin-a', '.venv')
+    );
+    makeUserKernelspec(
+      'nbvk-twin-b',
+      'Twin Kernel',
+      path.join(ROOT, 'twin-b', '.venv')
+    );
+    await showLauncher(page);
+
+    for (const [item, title] of [
+      ['Show in File Browser', 'Kernel Not Resolved'],
+      ['Open Terminal at Location', 'Kernel Not Resolved'],
+      ['Unregister Kernel', 'Cannot Unregister'],
+      ['Remove Environment (dangerous)', 'Cannot Remove']
+    ]) {
+      await runMenuItem(page, kernelCard(page, 'Twin Kernel').first(), item);
+      // showErrorMessage offers only Close, a reject button
+      const body = await answerDialog(page, title, 'reject');
+      expect(body).toContain('nbvk-twin-a');
+      expect(body).toContain('nbvk-twin-b');
+      expect(body).toContain('distinct display_name');
+      // A managed env's card name comes from name_format, not kernel.json
+      expect(body).not.toContain('kernel.json');
+    }
   });
 
   test('ACC-API-28 kernelspec-remove refuses a non-local kernelspec', async ({

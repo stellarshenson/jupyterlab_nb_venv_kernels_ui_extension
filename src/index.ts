@@ -101,14 +101,23 @@ function showLoadingDialog(message: string): Dialog<unknown> {
 let nbVenvKernelsAvailable = false;
 
 /**
+ * A launcher card resolved to one kernelspec, or why it could not be.
+ */
+interface IKernelResolution {
+  info: IKernelPathResponse | null;
+  /** The reason `info` is null, in the server's words when it gave any. */
+  error: string;
+}
+
+/**
  * Fetch the kernel path information from the server.
  *
  * @param displayName - The display name of the kernel
- * @returns Promise resolving to kernel path info or null if not available
+ * @returns Promise resolving to the kernel path info, or null and the reason
  */
 async function fetchKernelPath(
   displayName: string
-): Promise<IKernelPathResponse | null> {
+): Promise<IKernelResolution> {
   const settings = ServerConnection.makeSettings();
   const url = URLExt.join(
     settings.baseUrl,
@@ -123,14 +132,20 @@ async function fetchKernelPath(
     if (!response.ok) {
       const data = (await response.json()) as IKernelPathResponse;
       console.warn(`Failed to get kernel path: ${data.error}`);
-      return null;
+      return {
+        info: null,
+        error: data.error || `Server answered ${response.status}`
+      };
     }
 
     const data = (await response.json()) as IKernelPathResponse;
-    return data;
+    return { info: data, error: '' };
   } catch (error) {
     console.error('Error fetching kernel path:', error);
-    return null;
+    return {
+      info: null,
+      error: `Could not resolve kernel "${displayName}": ${error}`
+    };
   }
 }
 
@@ -467,12 +482,12 @@ async function enhanceKernelCardTitle(
   if (!info) {
     let pending = kernelInfoInflight.get(displayName);
     if (!pending) {
-      pending = fetchKernelPath(displayName).then(result => {
-        if (result) {
-          kernelInfoCache.set(displayName, result);
+      pending = fetchKernelPath(displayName).then(({ info }) => {
+        if (info) {
+          kernelInfoCache.set(displayName, info);
         }
         kernelInfoInflight.delete(displayName);
-        return result;
+        return info;
       });
       kernelInfoInflight.set(displayName, pending);
     }
@@ -542,13 +557,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        const kernelInfo = await fetchKernelPath(displayName);
+        const { info: kernelInfo, error } = await fetchKernelPath(displayName);
 
         if (!kernelInfo) {
-          await showErrorMessage(
-            'Kernel Not Resolved',
-            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
-          );
+          await showErrorMessage('Kernel Not Resolved', error);
           return;
         }
 
@@ -607,13 +619,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
           return;
         }
 
-        const kernelInfo = await fetchKernelPath(displayName);
+        const { info: kernelInfo, error } = await fetchKernelPath(displayName);
 
         if (!kernelInfo) {
-          await showErrorMessage(
-            'Kernel Not Resolved',
-            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
-          );
+          await showErrorMessage('Kernel Not Resolved', error);
           return;
         }
 
@@ -683,27 +692,25 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
-        let kernelInfo: IKernelPathResponse | null;
+        let resolution: IKernelResolution;
         let env: IVenvEnvironment | null;
         try {
-          kernelInfo = await fetchKernelPath(displayName);
+          resolution = await fetchKernelPath(displayName);
           env = await findVenvEnvironment(
             displayName,
-            kernelInfo?.executable_path,
-            kernelInfo?.resource_dir
+            resolution.info?.executable_path,
+            resolution.info?.resource_dir
           );
         } finally {
           resolveDialog.dispose();
         }
+        const kernelInfo = resolution.info;
 
         // A kernel the server cannot resolve to one kernelspec (unknown, or a
         // display name shared by kernels in different directories) must not
         // fall through to the env-name substring match below.
         if (!kernelInfo) {
-          await showErrorMessage(
-            'Cannot Unregister',
-            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
-          );
+          await showErrorMessage('Cannot Unregister', resolution.error);
           return;
         }
 
@@ -820,27 +827,25 @@ const plugin: JupyterFrontEndPlugin<void> = {
         // Resolve the kernel's executable path so we can match envs by path
         // rather than by name substring (avoids picking the wrong env when
         // names share a prefix, e.g. `demo` vs `demo-prod`).
-        let kernelInfo: IKernelPathResponse | null;
+        let resolution: IKernelResolution;
         let env: IVenvEnvironment | null;
         try {
-          kernelInfo = await fetchKernelPath(displayName);
+          resolution = await fetchKernelPath(displayName);
           env = await findVenvEnvironment(
             displayName,
-            kernelInfo?.executable_path,
-            kernelInfo?.resource_dir
+            resolution.info?.executable_path,
+            resolution.info?.resource_dir
           );
         } finally {
           resolveDialog.dispose();
         }
+        const kernelInfo = resolution.info;
 
         // A kernel the server cannot resolve to one kernelspec (unknown, or a
         // display name shared by kernels in different directories) must not
         // fall through to the env-name substring match below.
         if (!kernelInfo) {
-          await showErrorMessage(
-            'Cannot Remove',
-            `Could not resolve kernel "${displayName}" to one kernelspec. It may not be listed, or another kernel may share this display name; give each kernelspec a distinct display_name.`
-          );
+          await showErrorMessage('Cannot Remove', resolution.error);
           return;
         }
 

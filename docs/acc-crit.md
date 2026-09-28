@@ -265,3 +265,11 @@ The extension's own server endpoints
   - mechanism: 2026-09-28T19:13:58Z @kj VenvRemoveHandler resolves the path with os.path.realpath and runs shutil.rmtree only when the basename is .venv and it is a directory
   - log: 2026-09-28T19:13:58Z @kj added
   - log: 2026-09-28T19:14:04Z @kj closed: verified-by-galata
+- [x] `ACC-API-32` **Edge: refusal dialog shows the server's reason** - MEDIUM; when a card cannot be resolved to one kernelspec, Show in File Browser, Open Terminal, Unregister and Remove show the server's error text; for a shared display name it names the kernels
+  - evidence: Galata 29/29 green 2026-09-28 port 8937; ACC-API-32 red on the old build (dialog showed the guessed message), green on the new; jest 37/37; lint clean
+  - related: DEF-UI-17, DEF-UI-18, ACC-API-30
+  - test: two user kernelspecs named Twin Kernel, run each menu item on one card, dialog body names nbvk-twin-a and nbvk-twin-b
+  - test-tags: E2E
+  - mechanism: 2026-09-28T20:12:52Z @kj fetchKernelPath returns the server's error with a null result; the four dialogs show it
+  - log: 2026-09-28T20:12:52Z @kj added
+  - log: 2026-09-28T20:19:59Z @kj closed
