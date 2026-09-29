@@ -2,6 +2,13 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.2.32] - 2026-09-29
+
+### Added
+
+- Agent skill `.agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md` that lets an AI coding assistant manage these kernels from the shell with the `nb_venv_kernels` CLI, asking before any delete
+- README "Agent Skill" section with the line that links the skill into Claude Code from a clone
+
 ## [1.2.31] - 2026-09-28
 
 ### Added

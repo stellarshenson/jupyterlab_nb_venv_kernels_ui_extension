@@ -217,3 +217,32 @@ Deleting an environment or kernelspec from disk
   - log: 2026-09-28T18:37:35Z @kj reported: adversarial review round 1 (bug-hunter); fix approach is the user's decision
   - log: 2026-09-28T19:13:58Z @kj edited test-tags added "E2E"
   - log: 2026-09-28T19:13:58Z @kj closed: fixed: new POST /api/venv-remove runs shutil.rmtree on the .venv; frontend removeVenv calls it instead of DELETE /api/contents
+
+## Agent Skill `AGENT`
+
+The agent skill for the nb_venv_kernels CLI
+
+- [x] `DEF-AGENT-22` **Kernelspec delete rule does not ask first** - MAJOR; SKILL.md rule for standalone kernelspecs prescribes jupyter kernelspec remove -f with no ask, while the .venv rule asks; -f skips jupyter's own prompt, so an agent deletes without the user's word; the menu shows a Cancel/Remove dialog first
+  - evidence: kernelspec rule now ends 'Ask user first; cannot undo', same as the .venv rule; both delete rules ask; quick_validate.py passes; lint clean
+  - related: ACC-AGENT-33
+  - repro: read the kernelspec rule in .agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md
+  - test-tags: MANUAL
+  - root-cause: 2026-09-29T12:49:45Z @kj the ask was written on the .venv rule only
+  - log: 2026-09-29T12:49:45Z @kj added
+  - log: 2026-09-29T12:50:14Z @kj closed
+- [x] `DEF-AGENT-23` **README link line loops on re-run** - MINOR; ln -s run a second time creates a loop link .agents/skills/<name>/<name> inside the clone, and fails with 'No such file or directory' when ~/.claude/skills is absent
+  - evidence: README line now 'mkdir -p ~/.claude/skills && ln -sfn ...'; run twice in a scratch HOME: both exit 0, no loop link inside the skill dir
+  - related: ACC-AGENT-33
+  - repro: run the README ln -s line twice, then ls .agents/skills/jupyterlab-nb-venv-kernels-ui-extension
+  - test-tags: MANUAL
+  - root-cause: 2026-09-29T12:49:45Z @kj ln -s follows an existing link to a directory and creates the new link inside it; nothing creates ~/.claude/skills
+  - log: 2026-09-29T12:49:45Z @kj added
+  - log: 2026-09-29T12:50:14Z @kj closed
+- [x] `DEF-AGENT-24` **Link line breaks the link when run outside the clone root** - MINOR; ln -sfn with $PWD run from a subdirectory replaces a working link with a dangling one and exits 0; the README said only 'from a clone'
+  - evidence: README now says 'from the root of a clone', where $PWD is the clone root; the ln -sfn line stays; prettier and lint clean
+  - related: DEF-AGENT-23 - -f added there
+  - repro: link from the clone root, then run the README line from docs/, then test -e ~/.claude/skills/jupyterlab-nb-venv-kernels-ui-extension
+  - test-tags: MANUAL
+  - root-cause: 2026-09-29T12:53:55Z @kj -f replaces the link, and $PWD is the current directory, not the clone root
+  - log: 2026-09-29T12:53:55Z @kj added
+  - log: 2026-09-29T12:54:15Z @kj closed

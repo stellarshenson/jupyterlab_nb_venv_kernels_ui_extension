@@ -1,0 +1,2 @@
+- 2026-09-29T12:50:44Z @kj acc-crit.md 75972fc0 sha256:cc788fb40047bb5d62039e73c1e38d29a38f2a7075e8325db1056f37adb66da0: prettier removes the trailing blank line pm-tools left; lint:check fails on it
+- 2026-09-29T12:50:44Z @kj defects.md 433ec8a7 sha256:bfcaf16d7264a43f35a799736a2fc85711662b8e880efe03e45c1a3cc9d4017b: prettier removes the trailing blank line pm-tools left; lint:check fails on it

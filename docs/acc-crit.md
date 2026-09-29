@@ -273,3 +273,16 @@ The extension's own server endpoints
   - mechanism: 2026-09-28T20:12:52Z @kj fetchKernelPath returns the server's error with a null result; the four dialogs show it
   - log: 2026-09-28T20:12:52Z @kj added
   - log: 2026-09-28T20:19:59Z @kj closed
+
+## Agent Skill `AGENT`
+
+Skill that lets an AI assistant manage the kernels from the shell
+
+- [x] `ACC-AGENT-33` **Agent skill for the nb_venv_kernels CLI** - MEDIUM; skill at .agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md points at nb_venv_kernels --help and states only the rules help cannot enforce; README gives the link line, run from the root of a clone; every rule matches nb_venv_kernels 1.2.45 and this extension's guards
+  - evidence: quick_validate.py 'Skill is valid!', 20 lines; rules checked against nb_venv_kernels 1.2.45 source and live no-op calls; review rounds 1-3 (architect, bug-hunter, ux-designer): 2, 2, 0 findings; lint clean
+  - test: quick_validate.py passes; each rule checked against nb_venv_kernels source and a live CLI call that changes nothing
+  - test-tags: MANUAL
+  - mechanism: 2026-09-29T12:40:09Z @kj the skill holds no command reference; the CLI's --help is the reference, so the skill does not go stale when flags change
+  - log: 2026-09-29T12:40:09Z @kj added
+  - log: 2026-09-29T12:53:55Z @kj edited text "skill at .agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md points at nb_venv_kernels --help and states only the rules help cannot enforce; README gives the ln -s line; every rule matches nb_venv_kernels 1.2.45 and this extension's guards" -> "skill at .agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md points at nb_venv_kernels --help and states only the rules help cannot enforce; README gives the link line, run from the root of a clone; every rule matches nb_venv_kernels 1.2.45 and this extension's guards"; reason: review round 2: text named the replaced ln -s line
+  - log: 2026-09-29T12:56:37Z @kj closed

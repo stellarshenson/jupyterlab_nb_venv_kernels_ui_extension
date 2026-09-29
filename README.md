@@ -40,6 +40,14 @@ Context menu extension for kernel launcher cards. Right-click on any kernel to n
 - **Kernel details on hover** - The card's tooltip shows kernel name, kind, executable, resource directory and environment path
 - **Shared display names refused** - When kernels in different directories share one display name, every menu action refuses and names the colliding kernels
 
+## Agent Skill
+
+`.agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md` tells an AI coding assistant how to manage these kernels from the shell with the `nb_venv_kernels` CLI. The skill is not in the wheel. Link it into Claude Code from the root of a clone:
+
+```bash
+mkdir -p ~/.claude/skills && ln -sfn "$PWD/.agents/skills/jupyterlab-nb-venv-kernels-ui-extension" ~/.claude/skills/jupyterlab-nb-venv-kernels-ui-extension
+```
+
 ## Requirements
 
 - JupyterLab >= 4.0.0
