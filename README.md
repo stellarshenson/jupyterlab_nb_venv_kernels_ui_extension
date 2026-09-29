@@ -40,14 +40,6 @@ Context menu extension for kernel launcher cards. Right-click on any kernel to n
 - **Kernel details on hover** - The card's tooltip shows kernel name, kind, executable, resource directory and environment path
 - **Shared display names refused** - When kernels in different directories share one display name, every menu action refuses and names the colliding kernels
 
-## Agent Skill
-
-`.agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md` tells an AI coding assistant how to manage these kernels from the shell with the `nb_venv_kernels` CLI. The skill is not in the wheel. Link it into Claude Code from the root of a clone:
-
-```bash
-mkdir -p ~/.claude/skills && ln -sfn "$PWD/.agents/skills/jupyterlab-nb-venv-kernels-ui-extension" ~/.claude/skills/jupyterlab-nb-venv-kernels-ui-extension
-```
-
 ## Requirements
 
 - JupyterLab >= 4.0.0
@@ -57,6 +49,28 @@ mkdir -p ~/.claude/skills && ln -sfn "$PWD/.agents/skills/jupyterlab-nb-venv-ker
 ```bash
 pip install jupyterlab-nb-venv-kernels-ui-extension
 ```
+
+## Agent Skill
+
+`.agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md` tells an AI coding assistant how to manage these kernels from the shell with the `nb_venv_kernels` CLI. `pip install` puts a copy in `share/jupyter/agents/skills/` under the Python environment. No agent reads that directory, so link it into the agent skills directory. Run this where `python` is the Python that runs the lab, not an activated project venv:
+
+```bash
+d="$(python -c 'import sysconfig; print(sysconfig.get_paths()["data"])')/share/jupyter/agents/skills/jupyterlab-nb-venv-kernels-ui-extension"
+ls "$d/SKILL.md" >/dev/null &&
+  mkdir -p ~/.agents/skills &&
+  ln -sfn "$d" ~/.agents/skills/jupyterlab-nb-venv-kernels-ui-extension
+```
+
+When there is no copy under that Python's data directory, `ls` prints the missing path, the command stops with a non-zero exit, and any existing link stays. That happens in a project venv, and after `pip install --user`; for that install, put `python -m site --user-base` in place of the `python -c '...'` call in the first line. Claude Code reads `~/.claude/skills`, not `~/.agents/skills`; for Claude Code, put `~/.claude/skills` in place of `~/.agents/skills` in the last two lines.
+
+Agents that read `.agents/skills` also find the skill in a clone of this repository. To make it available to Claude Code everywhere, link it from the root of a clone:
+
+```bash
+mkdir -p ~/.claude/skills &&
+  ln -sfn "$PWD/.agents/skills/jupyterlab-nb-venv-kernels-ui-extension" ~/.claude/skills/jupyterlab-nb-venv-kernels-ui-extension
+```
+
+When a copied directory, not a link, already sits at the link path of either command, `ln` puts the new link inside it and the agent keeps reading the copy; move that directory out of the skills directory, then run the command again.
 
 ## Uninstall
 

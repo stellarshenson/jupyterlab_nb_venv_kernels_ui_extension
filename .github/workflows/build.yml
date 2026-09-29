@@ -34,7 +34,8 @@ jobs:
     - name: Build the extension
       run: |
         set -eux
-        python -m pip install .
+        python -m pip install . pytest
+        pytest -vv -r ap
 
         jupyter server extension list
         jupyter server extension list 2>&1 | grep -ie "jupyterlab_nb_venv_kernels_ui_extension.*OK"

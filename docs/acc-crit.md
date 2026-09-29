@@ -286,3 +286,12 @@ Skill that lets an AI assistant manage the kernels from the shell
   - log: 2026-09-29T12:40:09Z @kj added
   - log: 2026-09-29T12:53:55Z @kj edited text "skill at .agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md points at nb_venv_kernels --help and states only the rules help cannot enforce; README gives the ln -s line; every rule matches nb_venv_kernels 1.2.45 and this extension's guards" -> "skill at .agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md points at nb_venv_kernels --help and states only the rules help cannot enforce; README gives the link line, run from the root of a clone; every rule matches nb_venv_kernels 1.2.45 and this extension's guards"; reason: review round 2: text named the replaced ln -s line
   - log: 2026-09-29T12:56:37Z @kj closed
+- [x] `ACC-AGENT-34` **Wheel ships the agent skill** - MEDIUM; pip install puts SKILL.md at share/jupyter/agents/skills/jupyterlab-nb-venv-kernels-ui-extension under the Python's data directory (sysconfig data path; sys.prefix in a venv or conda env), outside the Python package; README gives the link line for that copy and the link line for a clone
+  - evidence: test_pip_install_ships_the_skill passes on the installed 1.2.33 wheel and fails when the copy is missing; CI build job runs pytest after pip install .; README link lines checked in a scratch HOME; review rounds to 0 findings
+  - related: DEF-AGENT-25
+  - test: pytest test_pip_install_ships_the_skill: installed copy equals the repository copy
+  - test-tags: UNIT
+  - mechanism: 2026-09-29T20:04:37Z @kj pyproject wheel shared-data maps .agents/skills/<name> to share/jupyter/agents/skills/<name>
+  - log: 2026-09-29T20:04:37Z @kj added
+  - log: 2026-09-29T20:25:02Z @kj edited text "pip install puts SKILL.md at <sys.prefix>/share/jupyter/agents/skills/jupyterlab-nb-venv-kernels-ui-extension, outside the Python package; README gives the link line for that copy and the link line for a clone" -> "pip install puts SKILL.md at share/jupyter/agents/skills/jupyterlab-nb-venv-kernels-ui-extension under the Python's data directory (sysconfig data path; sys.prefix in a venv or conda env), outside the Python package; README gives the link line for that copy and the link line for a clone"; reason: review round 3: the test and README now read the sysconfig data path, which differs from sys.prefix on a Debian system Python
+  - log: 2026-09-29T20:39:20Z @kj closed

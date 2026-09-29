@@ -246,3 +246,11 @@ The agent skill for the nb_venv_kernels CLI
   - root-cause: 2026-09-29T12:53:55Z @kj -f replaces the link, and $PWD is the current directory, not the clone root
   - log: 2026-09-29T12:53:55Z @kj added
   - log: 2026-09-29T12:54:15Z @kj closed
+- [x] `DEF-AGENT-25` **Skill missing from the wheel** - MEDIUM; pip install does not ship SKILL.md, so a lab image cannot link it; README said the skill is not in the wheel and gave only the clone link line
+  - evidence: pyproject shared-data maps .agents/skills/<name> to share/jupyter/agents/skills/<name>; 1.2.33 wheel carries it (unzip -l); make test jest 37/37, pytest test_pip_install_ships_the_skill 1/1; review architect, bug-hunter, ux-designer to 0 findings
+  - repro: pip install the 1.2.32 wheel, then ls $(python -c 'import sysconfig; print(sysconfig.get_paths()["data"])')/share/jupyter/agents/skills
+  - test-tags: UNIT
+  - root-cause: 2026-09-29T20:04:15Z @kj pyproject shared-data had no .agents/skills entry; the skill was added without the recipe's in-the-wheel step
+  - log: 2026-09-29T20:04:15Z @kj added
+  - log: 2026-09-29T20:29:17Z @kj edited repro "pip install the 1.2.32 wheel, then ls $(python -c 'import sys; print(sys.prefix)')/share/jupyter/agents/skills" -> "pip install the 1.2.32 wheel, then ls $(python -c 'import sysconfig; print(sysconfig.get_paths()["data"])')/share/jupyter/agents/skills"; reason: review round 3: README and test read the sysconfig data path, which differs from sys.prefix on a Debian system Python
+  - log: 2026-09-29T20:39:20Z @kj closed

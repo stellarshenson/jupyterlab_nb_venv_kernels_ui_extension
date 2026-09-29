@@ -2,6 +2,20 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.2.34] - 2026-09-29
+
+### Added
+
+- Test that the installed agent skill matches the repository copy; CI runs it after `pip install .`
+
+### Changed
+
+- README "Agent Skill" section moved below Install, with a link command for the installed copy that prints the missing path and keeps any existing link when that Python has no copy, the `pip install --user` and Claude Code substitutions, and the step for a copied directory at the link path
+
+### Fixed
+
+- The wheel now ships the agent skill: `pip install` puts it at `share/jupyter/agents/skills/jupyterlab-nb-venv-kernels-ui-extension/SKILL.md` under the Python's data directory; 1.2.32 had it in the repository only
+
 ## [1.2.32] - 2026-09-29
 
 ### Added

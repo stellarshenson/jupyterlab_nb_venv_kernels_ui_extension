@@ -42,6 +42,7 @@ exclude = [".github", "binder"]
 "jupyterlab_nb_venv_kernels_ui_extension/labextension" = "share/jupyter/labextensions/jupyterlab_nb_venv_kernels_ui_extension"
 "install.json" = "share/jupyter/labextensions/jupyterlab_nb_venv_kernels_ui_extension/install.json"
 "jupyter-config/server-config" = "etc/jupyter/jupyter_server_config.d"
+".agents/skills/jupyterlab-nb-venv-kernels-ui-extension" = "share/jupyter/agents/skills/jupyterlab-nb-venv-kernels-ui-extension"
 
 [tool.hatch.build.hooks.version]
 path = "jupyterlab_nb_venv_kernels_ui_extension/_version.py"
