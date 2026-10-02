@@ -2,6 +2,18 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.2.35] - 2026-10-02
+
+### Added
+
+- `test` and `dev` extras in `pyproject.toml`; `dev` pulls `test`, so `pip install "jupyterlab_nb_venv_kernels_ui_extension[dev]"` installs the testing packages
+
+### Changed
+
+- Dependency ranges are `jupyter_server>=2.21,<3` and `jupyter_client>=8.10,<9`: the tested minor version is the floor and the next major version is the ceiling, so older versions of both are no longer accepted
+- README "Agent Skill" section states where the skill is and gives two link lines, one for the installed copy under `sys.prefix` and one for a clone
+- CI build job installs `.[test]`
+
 ## [1.2.34] - 2026-09-29
 
 ### Added

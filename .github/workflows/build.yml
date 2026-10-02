@@ -34,7 +34,7 @@ jobs:
     - name: Build the extension
       run: |
         set -eux
-        python -m pip install . pytest
+        python -m pip install .[test]
         pytest -vv -r ap
 
         jupyter server extension list

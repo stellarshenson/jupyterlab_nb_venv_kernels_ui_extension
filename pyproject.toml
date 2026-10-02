@@ -23,10 +23,19 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "jupyter_server>=2.0.0",
-    "jupyter_client>=8.0.0",
+    "jupyter_server>=2.21,<3",
+    "jupyter_client>=8.10,<9",
 ]
 dynamic = ["version", "description", "authors", "urls", "keywords"]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=9.1,<10",
+    "jupyterlab>=4.6,<5",  # the Galata test server imports jupyterlab.galata
+]
+dev = [
+    "jupyterlab_nb_venv_kernels_ui_extension[test]",  # the dev installation carries the testing packages
+]
 
 [tool.hatch.version]
 source = "nodejs"
