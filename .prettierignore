@@ -4,3 +4,7 @@ node_modules
 **/package.json
 !/package.json
 jupyterlab_nb_venv_kernels_ui_extension
+eslint.config.mjs
+.venv
+.claude
+.agents

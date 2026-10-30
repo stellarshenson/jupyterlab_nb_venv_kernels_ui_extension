@@ -130,3 +130,7 @@ dmypy.json
 .nodeenv/
 ui-tests/.tmp/
 tmp/
+
+# Run output
+logs/
+junit.xml
