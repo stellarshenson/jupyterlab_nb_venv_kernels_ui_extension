@@ -22,7 +22,7 @@ test('should emit an activation console message', async ({ page }) => {
     logs.filter(
       s =>
         s ===
-        'JupyterLab extension jupyterlab_nb_venv_kernels_ui_extension is activated!'
+        'JupyterLab extension @stellarshenson/jupyterlab-nb-venv-kernels-ui-extension is activated!'
     )
   ).toHaveLength(1);
 });

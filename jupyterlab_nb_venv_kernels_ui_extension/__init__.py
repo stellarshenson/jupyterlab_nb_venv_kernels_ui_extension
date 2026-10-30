@@ -16,7 +16,7 @@ except ImportError:
 def _jupyter_labextension_paths():
     return [{
         "src": "labextension",
-        "dest": "jupyterlab_nb_venv_kernels_ui_extension"
+        "dest": "@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension"
     }]
 
 

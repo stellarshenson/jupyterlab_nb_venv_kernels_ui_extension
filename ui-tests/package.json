@@ -1,7 +1,7 @@
 {
-  "name": "jupyterlab_nb_venv_kernels_ui_extension-ui-tests",
+  "name": "@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension-ui-tests",
   "version": "1.0.0",
-  "description": "JupyterLab jupyterlab_nb_venv_kernels_ui_extension Integration Tests",
+  "description": "JupyterLab @stellarshenson/jupyterlab-nb-venv-kernels-ui-extension Integration Tests",
   "private": true,
   "scripts": {
     "start": "jupyter lab --config jupyter_server_test_config.py",

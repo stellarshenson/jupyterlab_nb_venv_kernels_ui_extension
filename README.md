@@ -1,7 +1,7 @@
 # jupyterlab_nb_venv_kernels_ui_extension
 
 [![GitHub Actions](https://github.com/stellarshenson/jupyterlab_nb_venv_kernels_ui_extension/actions/workflows/build.yml/badge.svg)](https://github.com/stellarshenson/jupyterlab_nb_venv_kernels_ui_extension/actions/workflows/build.yml)
-[![npm version](https://img.shields.io/npm/v/jupyterlab_nb_venv_kernels_ui_extension.svg)](https://www.npmjs.com/package/jupyterlab_nb_venv_kernels_ui_extension)
+[![npm version](https://img.shields.io/npm/v/@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension.svg)](https://www.npmjs.com/package/@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension)
 [![PyPI version](https://img.shields.io/pypi/v/jupyterlab-nb-venv-kernels-ui-extension.svg)](https://pypi.org/project/jupyterlab-nb-venv-kernels-ui-extension/)
 [![Total PyPI downloads](https://static.pepy.tech/badge/jupyterlab-nb-venv-kernels-ui-extension)](https://pepy.tech/project/jupyterlab-nb-venv-kernels-ui-extension)
 [![JupyterLab 4](https://img.shields.io/badge/JupyterLab-4-orange.svg)](https://jupyterlab.readthedocs.io/en/stable/)

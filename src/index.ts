@@ -505,10 +505,10 @@ async function enhanceKernelCardTitle(
 }
 
 /**
- * Initialization data for the jupyterlab_nb_venv_kernels_ui_extension extension.
+ * Initialization data for the @stellarshenson/jupyterlab-nb-venv-kernels-ui-extension extension.
  */
 const plugin: JupyterFrontEndPlugin<void> = {
-  id: 'jupyterlab_nb_venv_kernels_ui_extension:plugin',
+  id: '@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension:plugin',
   description:
     "Right-click kernel launcher cards to navigate file browser to kernel's location or open terminal there",
   autoStart: true,
@@ -521,7 +521,7 @@ const plugin: JupyterFrontEndPlugin<void> = {
     terminalTracker: ITerminalTracker | null
   ) => {
     console.log(
-      'JupyterLab extension jupyterlab_nb_venv_kernels_ui_extension is activated!'
+      'JupyterLab extension @stellarshenson/jupyterlab-nb-venv-kernels-ui-extension is activated!'
     );
 
     const { commands } = app;
