@@ -2,6 +2,12 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.2.41] - 2026-10-31
+
+### Changed
+
+- Add the jupyterlab discovery block of the template
+
 ## [1.2.40] - 2026-10-31
 
 ### Changed
