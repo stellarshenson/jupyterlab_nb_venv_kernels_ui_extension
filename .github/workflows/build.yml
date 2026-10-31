@@ -26,25 +26,34 @@ jobs:
     - name: Install dependencies
       run: python -m pip install -U "jupyterlab>=4.6,<5"
 
-    - name: Test the extension
+    - name: Lint the extension
       run: |
         set -eux
         jlpm
-        jlpm run build
+        jlpm run lint:check
+
+    - name: Test the extension
+      run: |
+        set -eux
         jlpm run test
 
     - name: Build the extension
       run: |
         set -eux
         python -m pip install .[test]
-        pytest -vv -r ap
 
+        pytest -vv -r ap --cov jupyterlab_nb_venv_kernels_ui_extension
         jupyter server extension list
         jupyter server extension list 2>&1 | grep -ie "jupyterlab_nb_venv_kernels_ui_extension.*OK"
 
         jupyter labextension list
         jupyter labextension list 2>&1 | grep -ie "@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension.*OK"
         python -m jupyterlab.browser_check
+
+    - name: Check that all endpoints are authenticated
+      run: |
+        set -eux
+        python .github/scripts/check_auth.py
 
     - name: Package the extension
       run: |
@@ -116,8 +125,8 @@ jobs:
     - name: Install the extension
       run: |
         set -eux
-        # The UI tests register and remove venv kernels through nb_venv_kernels
-        python -m pip install "jupyterlab>=4.6,<5" nb_venv_kernels jupyterlab_nb_venv_kernels_ui_extension*.whl
+        # The UI tests register and remove venv kernels through nb_venv_kernels (template-sync: keep)
+        python -m pip install "jupyterlab>=4.6,<5" jupyterlab_nb_venv_kernels_ui_extension*.whl nb_venv_kernels
 
     - name: Install dependencies
       working-directory: ui-tests
@@ -164,4 +173,4 @@ jobs:
           python_version: '3.13'
       - uses: jupyterlab/maintainer-tools/.github/actions/check-links@v1
         with:
-          ignore_links: "https://www.npmjs.com/package/.* https://pepy.tech/project/jupyterlab-nb-venv-kernels-ui-extension https://static.pepy.tech/badge/jupyterlab-nb-venv-kernels-ui-extension"
+          ignore_links: "https://www.youtube.com/.* https://www.npmjs.com/package/.* https://pepy.tech/project/jupyterlab-nb-venv-kernels-ui-extension https://static.pepy.tech/badge/jupyterlab-nb-venv-kernels-ui-extension"

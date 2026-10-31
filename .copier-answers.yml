@@ -6,14 +6,14 @@ author_email: konrad.jelen@gmail.com
 author_name: Stellars Henson
 has_ai_rules: false
 has_binder: false
-has_settings: false
-kind: frontend
+has_settings: true
+kind: frontend-and-server
 labextension_name: '@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension'
 project_short_description: Jupyterlab extension to allow user to right-click on the
     kernel launcher button and select 'Show in File Browser' or 'Open Terminal at
     location' menus and get them to navigate to location or open location in terminal
     respectively
 python_name: jupyterlab_nb_venv_kernels_ui_extension
-repository: ''
+repository: https://github.com/stellarshenson/jupyterlab_nb_venv_kernels_ui_extension
 test: true
 
