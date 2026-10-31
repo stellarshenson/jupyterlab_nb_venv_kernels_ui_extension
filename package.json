@@ -107,6 +107,16 @@
         "access": "public"
     },
     "jupyterlab": {
+        "discovery": {
+            "server": {
+                "managers": [
+                    "pip"
+                ],
+                "base": {
+                    "name": "jupyterlab_nb_venv_kernels_ui_extension"
+                }
+            }
+        },
         "extension": true,
         "outputDir": "jupyterlab_nb_venv_kernels_ui_extension/labextension",
         "schemaDir": "schema"
