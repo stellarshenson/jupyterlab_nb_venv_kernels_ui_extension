@@ -1,6 +1,6 @@
 {
     "name": "@stellarshenson/jupyterlab-nb-venv-kernels-ui-extension",
-    "version": "1.2.40",
+    "version": "1.2.41",
     "description": "Jupyterlab extension to allow user to right-click on the kernel launcher button and select 'Show in File Browser' or 'Open Terminal at location' menus and get them to navigate to location or open location in terminal respectively",
     "keywords": [
         "jupyter",
