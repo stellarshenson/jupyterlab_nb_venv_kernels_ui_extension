@@ -131,3 +131,6 @@ This journal tracks substantive work on documents, diagrams, and documentation c
 
 43. **Task - Discovery block** (v1.2.41): added `jupyterlab.discovery` to `package.json` as the template v4.6.5 renders it<br>
     **Result**: The second audit of the extension fleet found this server extension without the block. The block names this package as the server side of the labextension, so JupyterLab can name it when the server side is missing. The rest of `package.json` is unchanged. `jlpm install --immutable`, `jlpm build:lib`, `jlpm run lint:check` and `template_sync.py --check` pass.
+
+44. **Task - Ignore the PayPal badge in the link check** (v1.2.41): cleared the Check Links failure that turned Build red at the Makefile 1.48 commit<br>
+    **Result**: `Build` run 41427085766 failed in `Check Links` on `https://www.paypal.com/donate/?hosted_button_id=B4KPBJDLLXTSA` with `403: Forbidden` from the GitHub runner; the URL is the Donate badge in `README.md`. The next commit, e3909dc, passed because the URL answered 200 that run, so the red would recur. Added `https://www.paypal.com/.*` to `ignore_links` in `.github/workflows/build.yml`, the rule the other extensions carry, and kept the badge. Build and Check Release pass at `bd9fb1b`.
