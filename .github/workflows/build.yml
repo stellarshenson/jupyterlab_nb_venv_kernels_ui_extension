@@ -173,4 +173,4 @@ jobs:
           python_version: '3.13'
       - uses: jupyterlab/maintainer-tools/.github/actions/check-links@v1
         with:
-          ignore_links: "https://www.youtube.com/.* https://www.npmjs.com/package/.* https://pepy.tech/project/jupyterlab-nb-venv-kernels-ui-extension https://static.pepy.tech/badge/jupyterlab-nb-venv-kernels-ui-extension"
+          ignore_links: "https://www.youtube.com/.* https://www.npmjs.com/package/.* https://pepy.tech/project/jupyterlab-nb-venv-kernels-ui-extension https://static.pepy.tech/badge/jupyterlab-nb-venv-kernels-ui-extension https://www.paypal.com/.*"
