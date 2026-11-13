@@ -2,6 +2,17 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## [1.2.44] - 2026-11-13
+
+### Changed
+
+- Write the markup of a defect repro as text so the link check passes
+
+### Fixed
+
+- Show the global conda dialog for a named conda environment
+- Write kernel names as text in dialogs and delete a .venv off the event loop
+
 ## [1.2.41] - 2026-10-31
 
 ### Changed
