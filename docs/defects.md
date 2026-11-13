@@ -50,6 +50,13 @@ Resolving the clicked kernel card to its nb_venv_kernels environment or standalo
   - root-cause: 2026-09-28T19:31:58Z @kj \_get_all_kernelspecs created unconfigured managers instead of using the server's kernel_spec_manager, which the launcher lists from
   - log: 2026-09-28T19:31:58Z @kj added
   - log: 2026-09-28T19:36:47Z @kj closed: fixed: KernelPathHandler.get uses the server's kernel_spec_manager via ensure_async; \_get_all_kernelspecs removed
+- [x] `DEF-MATCH-28-CONDA-NAMED` **Named conda environment opens its grandparent directory** - MEDIUM; Go to Project Folder and Open in Terminal on a named conda environment kernel go to the directory two levels above envs (/opt for /opt/conda/envs/foo) instead of showing the Global Conda Environment dialog of ACC-NAV-9
+  - evidence: Pattern 3 deleted; _extract_env_path on /opt/conda/envs/foo/bin/python and /home/lab/miniconda3/envs/foo/bin/python returns (<environment root>, True)
+  - repro: _extract_env_path('/opt/conda/envs/foo/bin/python', '') returns ('/opt', False)
+  - test-tags: MANUAL
+  - root-cause: 2026-11-13T07:26:38Z @kj Pattern 3 in KernelPathHandler._extract_env_path matched every <x>/<dir>/envs/<name>/bin/python before Pattern 4; its exclusion list (opt, usr, home) names the parent of the conda install, never the install directory
+  - log: 2026-11-13T07:26:38Z @kj added
+  - log: 2026-11-13T07:26:43Z @kj closed
 
 ## Context Menu `MENU`
 

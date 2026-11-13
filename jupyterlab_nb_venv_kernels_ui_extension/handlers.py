@@ -219,22 +219,6 @@ class KernelPathHandler(APIHandler):
                 # For named venvs, return the venv directory itself
                 return (potential_venv, False)
 
-        # Pattern 3: Conda local environment - /project/subdir/envs/envname/bin/python
-        # Return project root (two levels up from envs/envname)
-        conda_local_match = re.match(
-            r"^(.*)/([^/]+)/envs/([^/]+)/bin/python.*$",
-            real_path
-        )
-        if conda_local_match:
-            # Check if this looks like a local project env (not system conda)
-            potential_project = conda_local_match.group(1)
-            subdir = conda_local_match.group(2)
-            # If it's under a typical project structure, go to project root
-            if subdir not in ("opt", "usr", "home"):
-                project_root = potential_project
-                if os.path.isdir(project_root):
-                    return (project_root, False)
-
         # Pattern 4: Global conda environment - /opt/conda/envs/envname/bin/python
         # or ~/miniconda3/envs/envname/bin/python
         # Return the environment root (this is a global conda environment)
