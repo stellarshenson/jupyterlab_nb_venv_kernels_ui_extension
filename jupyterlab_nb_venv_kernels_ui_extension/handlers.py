@@ -1,6 +1,7 @@
 """
 API handlers for kernel path resolution.
 """
+import asyncio
 import json
 import os
 import re
@@ -347,14 +348,16 @@ class VenvRemoveHandler(APIHandler):
     """
 
     @tornado.web.authenticated
-    def post(self):
+    async def post(self):
         path = os.path.realpath((self.get_json_body() or {}).get("path") or "")
         if os.path.basename(path) != ".venv" or not os.path.isdir(path):
             self.set_status(400)
             self.finish(json.dumps({"error": f"Not a .venv directory: {path}"}))
             return
         try:
-            shutil.rmtree(path)
+            # A .venv holds gigabytes: delete off the event loop, or every
+            # kernel and request of the server waits until it is gone
+            await asyncio.to_thread(shutil.rmtree, path)
         except OSError as e:
             self.set_status(500)
             self.finish(json.dumps({"error": str(e)}))

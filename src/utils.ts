@@ -336,3 +336,32 @@ export function buildKernelTooltipText(
   }
   return lines.join('\n');
 }
+
+/**
+ * Build the body of the "Global Conda Environment" dialog. The display name
+ * and the path come from a kernelspec file, so they are written as text and
+ * never parsed as HTML.
+ *
+ * @param displayName - The kernel display name
+ * @param location - Where the environment is installed
+ * @returns The dialog body element
+ */
+export function globalCondaDialogNode(
+  displayName: string,
+  location: string
+): HTMLElement {
+  const content = document.createElement('div');
+  const p1 = document.createElement('p');
+  p1.textContent =
+    'Global conda environments are not associated with any specific project location.';
+  const p2 = document.createElement('p');
+  const name = document.createElement('strong');
+  name.textContent = displayName;
+  p2.append('The environment ', name, ' is installed at:');
+  const p3 = document.createElement('p');
+  const code = document.createElement('code');
+  code.textContent = location;
+  p3.append(code);
+  content.append(p1, p2, p3);
+  return content;
+}

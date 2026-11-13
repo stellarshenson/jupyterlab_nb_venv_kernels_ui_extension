@@ -17,6 +17,7 @@ import {
   IVenvEnvironmentsResponse,
   KERNEL_CARD_ATTR,
   enrichKernelCard,
+  globalCondaDialogNode,
   matchVenvEnvironment,
   toRelativePath,
   venvDirFromExecutable
@@ -74,13 +75,15 @@ function showLoadingDialog(message: string): Dialog<unknown> {
       border-radius: 50%;
       animation: launcher-ext-spin 1s linear infinite;
     "></div>
-    <span>${message}</span>
+    <span></span>
     <style>
       @keyframes launcher-ext-spin {
         to { transform: rotate(360deg); }
       }
     </style>
   `;
+  // The message names a kernel or an environment: text, never markup
+  content.querySelector('span')!.textContent = message;
 
   const body = new Widget({ node: content });
 
@@ -566,12 +569,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         // Check if this is a global conda environment
         if (kernelInfo.is_global_conda) {
-          const content = document.createElement('div');
-          content.innerHTML = `
-            <p>Global conda environments are not associated with any specific project location.</p>
-            <p>The environment <strong>${displayName}</strong> is installed at:</p>
-            <p><code>${kernelInfo.env_path || kernelInfo.resource_dir}</code></p>
-          `;
+          const content = globalCondaDialogNode(
+            displayName,
+            kernelInfo.env_path || kernelInfo.resource_dir
+          );
           const body = new Widget({ node: content });
           await showDialog({
             title: 'Global Conda Environment',
@@ -628,12 +629,10 @@ const plugin: JupyterFrontEndPlugin<void> = {
 
         // Check if this is a global conda environment
         if (kernelInfo.is_global_conda) {
-          const content = document.createElement('div');
-          content.innerHTML = `
-            <p>Global conda environments are not associated with any specific project location.</p>
-            <p>The environment <strong>${displayName}</strong> is installed at:</p>
-            <p><code>${kernelInfo.env_path || kernelInfo.resource_dir}</code></p>
-          `;
+          const content = globalCondaDialogNode(
+            displayName,
+            kernelInfo.env_path || kernelInfo.resource_dir
+          );
           const body = new Widget({ node: content });
           await showDialog({
             title: 'Global Conda Environment',

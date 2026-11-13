@@ -11,6 +11,7 @@ import * as path from 'path';
 import {
   buildKernelTooltipText,
   enrichKernelCard,
+  globalCondaDialogNode,
   IVenvEnvironment,
   KERNEL_CARD_ATTR,
   matchVenvEnvironment,
@@ -622,5 +623,22 @@ describe('context menu configuration', () => {
     for (let i = 1; i < ranks.length; i++) {
       expect(ranks[i]).toBeGreaterThan(ranks[i - 1]);
     }
+  });
+});
+
+describe('globalCondaDialogNode', () => {
+  it('writes a display name holding markup as text', () => {
+    const node = globalCondaDialogNode(
+      '<img src=x onerror=alert(1)>',
+      '/opt/conda/envs/<b>x</b>'
+    );
+    expect(node.querySelector('img')).toBeNull();
+    expect(node.querySelector('b')).toBeNull();
+    expect(node.querySelector('strong')?.textContent).toBe(
+      '<img src=x onerror=alert(1)>'
+    );
+    expect(node.querySelector('code')?.textContent).toBe(
+      '/opt/conda/envs/<b>x</b>'
+    );
   });
 });

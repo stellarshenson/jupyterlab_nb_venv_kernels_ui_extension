@@ -166,6 +166,13 @@ Spinners, dialogs and tooltips the user sees
   - root-cause: 2026-09-28T20:34:34Z @kj the hint names kernel.json as the place to fix, but for managed envs the launcher name comes from name_format
   - log: 2026-09-28T20:34:34Z @kj added
   - log: 2026-09-28T20:37:57Z @kj closed
+- [x] `DEF-UI-26-DIALOG-HTML` **Kernel display name parsed as HTML in dialogs** - MAJOR; Global Conda Environment dialog and the Please Wait spinner write the kernel display name, kernel name and env path through innerHTML; a kernelspec whose display_name holds markup (a cloned project's .venv) runs it in the lab page; src/index.ts showLoadingDialog, both global conda branches
+  - evidence: jest globalCondaDialogNode test: markup in display name and path stays text; no innerHTML interpolation left in src/index.ts; build_test 2026-11-13 Jest 38, Galata 29 green
+  - repro: kernel.json display_name '<img src=x onerror=alert(1)>' on a global conda kernel, right-click, Show in File Browser
+  - test-tags: UNIT
+  - root-cause: 2026-11-13T06:57:50Z @kj dialog bodies built with innerHTML template strings that interpolate kernelspec text unescaped
+  - log: 2026-11-13T06:57:50Z @kj added
+  - log: 2026-11-13T07:01:32Z @kj closed
 
 ## Unregister `UNREG`
 
@@ -217,6 +224,13 @@ Deleting an environment or kernelspec from disk
   - log: 2026-09-28T18:37:35Z @kj reported: adversarial review round 1 (bug-hunter); fix approach is the user's decision
   - log: 2026-09-28T19:13:58Z @kj edited test-tags added "E2E"
   - log: 2026-09-28T19:13:58Z @kj closed: fixed: new POST /api/venv-remove runs shutil.rmtree on the .venv; frontend removeVenv calls it instead of DELETE /api/contents
+- [x] `DEF-REMOVE-27-RMTREE-BLOCKS` **Remove Environment freezes the server while it deletes** - MEDIUM; POST /api/venv-remove runs shutil.rmtree inside a synchronous tornado handler; a multi-gigabyte .venv takes seconds to minutes, and every kernel message, terminal and request of the server waits until it ends
+  - evidence: VenvRemoveHandler.post is async and awaits asyncio.to_thread(shutil.rmtree); Galata remove specs and ACC-API-31 green, build_test 2026-11-13 Galata 29
+  - repro: Remove Environment on a .venv with torch installed, run a cell in another notebook meanwhile
+  - test-tags: E2E
+  - root-cause: 2026-11-13T06:57:50Z @kj VenvRemoveHandler.post is synchronous and calls shutil.rmtree on the event loop thread
+  - log: 2026-11-13T06:57:50Z @kj added
+  - log: 2026-11-13T07:01:32Z @kj closed
 
 ## Agent Skill `AGENT`
 
