@@ -1,3 +1,4 @@
 - 2026-09-29T12:50:44Z @kj acc-crit.md 75972fc0 sha256:cc788fb40047bb5d62039e73c1e38d29a38f2a7075e8325db1056f37adb66da0: prettier removes the trailing blank line pm-tools left; lint:check fails on it
 - 2026-09-29T12:50:44Z @kj defects.md 433ec8a7 sha256:bfcaf16d7264a43f35a799736a2fc85711662b8e880efe03e45c1a3cc9d4017b: prettier removes the trailing blank line pm-tools left; lint:check fails on it
 - 2026-10-02T01:09:41Z @kj acc-crit.md f1f6a09c sha256:f9c97d7222ef935f6ba05a7127e28b9399c45b61911df2ca4feceeeae1728fb3: prettier: pm-tools add left a trailing blank line at the end of the file; lint:check fails in CI until it is removed
+- 2026-11-13T07:10:02Z @kj defects.md 6eabc55b sha256:2be67d6b50e3f49235c821dd3754f0b8be6326ce0f899540900aec567608ec17: the log line of DEF-UI-26 keeps the old repro with a literal img tag; the CI link check reads it as an image and fails; the tag is written with &lt;

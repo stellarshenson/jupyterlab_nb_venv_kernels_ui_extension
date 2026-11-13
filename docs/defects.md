@@ -168,11 +168,12 @@ Spinners, dialogs and tooltips the user sees
   - log: 2026-09-28T20:37:57Z @kj closed
 - [x] `DEF-UI-26-DIALOG-HTML` **Kernel display name parsed as HTML in dialogs** - MAJOR; Global Conda Environment dialog and the Please Wait spinner write the kernel display name, kernel name and env path through innerHTML; a kernelspec whose display_name holds markup (a cloned project's .venv) runs it in the lab page; src/index.ts showLoadingDialog, both global conda branches
   - evidence: jest globalCondaDialogNode test: markup in display name and path stays text; no innerHTML interpolation left in src/index.ts; build_test 2026-11-13 Jest 38, Galata 29 green
-  - repro: kernel.json display_name '<img src=x onerror=alert(1)>' on a global conda kernel, right-click, Show in File Browser
+  - repro: kernel.json display_name holding an img tag with an onerror handler, on a global conda kernel; right-click, Show in File Browser
   - test-tags: UNIT
   - root-cause: 2026-11-13T06:57:50Z @kj dialog bodies built with innerHTML template strings that interpolate kernelspec text unescaped
   - log: 2026-11-13T06:57:50Z @kj added
   - log: 2026-11-13T07:01:32Z @kj closed
+  - log: 2026-11-13T07:09:51Z @kj edited repro "kernel.json display_name '&lt;img src=x onerror=alert(1)&gt;' on a global conda kernel, right-click, Show in File Browser" -> "kernel.json display_name holding an img tag with an onerror handler, on a global conda kernel; right-click, Show in File Browser"
 
 ## Unregister `UNREG`
 
